@@ -4,7 +4,7 @@ Stack:
 
 - Rust (linguagem de programação de alto nível com baixo footprint de memória e performance comparável com a de C/C++)
 - Axum (framework HTTP para Rust)
-- Tokio (Runtime async não-bloqueante que utiliza loop de eventos single-threaded)
+- Tokio (Runtime async com I/O não-bloqueante)
 - PostgreSQL (banco de dados relacional de uso comercial gratuito que prioriza consistência e disponibilidade)
 - Deadpool-postgres (gerenciador de pool de conexões com Postgres)
 - Serde (lib de desserialização/serialização em JSON)
