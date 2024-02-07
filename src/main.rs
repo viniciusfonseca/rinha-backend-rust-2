@@ -1,10 +1,12 @@
-use std::{env, time::Duration};
+use std::{env, time::SystemTime};
+use std::convert::From;
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Json, Router};
-use deadpool::{managed::QueueMode, Runtime};
+use deadpool::Runtime;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::{NoTls, Row};
-use deadpool_postgres::{PoolConfig, Timeouts};
+
+use chrono::{DateTime, Utc};
 
 type AppResult<T> = Result<T, Box<(dyn std::error::Error + 'static)>>;
 
@@ -30,16 +32,6 @@ async fn main() -> AppResult<()> {
         println!("creating postgres pool...");
         let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
         println!("postgres pool succesfully created");
-
-    cfg.pool = Some(PoolConfig {
-        queue_mode: QueueMode::Fifo,
-        max_size: 9995,
-        timeouts: Timeouts {
-            wait: Some(Duration::from_secs(60)),
-            create: Some(Duration::from_secs(60)),
-            recycle: Some(Duration::from_secs(60)),
-        },
-    });
 
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(inserir_transacao))
@@ -68,7 +60,7 @@ struct TransacaoResultDTO {
 }
 
 async fn inserir_transacao(
-    Path(id_cliente): Path<i8>,
+    Path(id_cliente): Path<i32>,
     State(pg_pool): State<deadpool_postgres::Pool>,
     Json(payload): Json<TransacaoDTO>,
 ) -> impl IntoResponse {
@@ -91,21 +83,23 @@ async fn inserir_transacao(
     let conn = pg_pool.get().await
         .expect("error getting db conn");
     
-    let saldo_atualizado = conn.query("SELECT INSERIR_TRANSACAO(?, ?, ?, ?);", &[
+    let saldo_atualizado = conn.query("CALL INSERIR_TRANSACAO($1, $2, $3, $4);", &[
         &id_cliente,
         &valor,
         &payload.tipo,
         &payload.descricao
     ]).await.expect("error running function");
 
-    if saldo_atualizado.is_empty() {
-        return (StatusCode::UNPROCESSABLE_ENTITY, String::new());
-    };
-
-    (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
-        saldo: saldo_atualizado.get(0).unwrap().get(0),
-        limite: saldo_atualizado.get(0).unwrap().get(1)
-    }).unwrap())
+    let saldo_atualizado = saldo_atualizado.get(0).unwrap();
+    return if let Some(saldo) = saldo_atualizado.get::<_, Option<i32>>(0) {
+        (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
+            saldo,
+            limite: saldo_atualizado.get(1)
+        }).unwrap())
+    }
+    else {
+        (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    }
 }
 
 #[derive(Serialize)]
@@ -129,6 +123,12 @@ struct ExtratoTransacaoDTO {
     pub realizada_em: String
 }
 
+impl ToString for SystemTime {
+    fn to_string(&self) -> String {
+        DateTime::<Utc>::from(&self).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    }
+}
+
 impl ExtratoDTO {
     pub fn from(saldo: &Row, extrato: Vec<Row>) -> ExtratoDTO {
         ExtratoDTO {
@@ -141,14 +141,14 @@ impl ExtratoDTO {
                 valor: t.get(0),
                 tipo: t.get(1),
                 descricao: t.get(2),
-                realizada_em: t.get(3)
+                realizada_em: DateTime::<Utc>::from(t.get::<_, SystemTime>(3)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
             }).collect()
         }
     }
 }
 
 async fn extrato(
-    Path(id_cliente): Path<i8>,
+    Path(id_cliente): Path<i32>,
     State(pg_pool): State<deadpool_postgres::Pool>,
 ) -> impl IntoResponse {
 
@@ -159,7 +159,7 @@ async fn extrato(
     let conn = pg_pool.get().await
         .expect("error getting db conn");
 
-    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = ?;").await
+    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await
         .expect("error preparing stmt (balance)");
 
     let saldo_rowset = conn.query(&stmt_saldo, &[&id_cliente]).await
@@ -168,7 +168,7 @@ async fn extrato(
     let saldo = saldo_rowset.get(0)
         .expect("balance not found");
 
-    let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = ? ORDER BY id DESC LIMIT 10;").await
+    let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = $1 ORDER BY id DESC LIMIT 10;").await
         .expect("error preparing stmt (transactions)");
 
     let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
