@@ -4,9 +4,6 @@ services:
   api01: &api
     build: .
     hostname: api01
-    environment:
-      - DB_HOST=db
-      - PORT=80
     expose:
       - "80"
     depends_on:
