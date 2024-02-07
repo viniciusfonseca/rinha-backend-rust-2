@@ -24,10 +24,10 @@ async fn main() -> AppResult<()> {
         .parse::<usize>()
         .unwrap();
 
-        cfg.pool = deadpool_postgres::PoolConfig::new(pool_size).into();
-        println!("creating postgres pool...");
-        let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
-        println!("postgres pool succesfully created");
+    cfg.pool = deadpool_postgres::PoolConfig::new(pool_size).into();
+    println!("creating postgres pool...");
+    let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
+    println!("postgres pool succesfully created");
 
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
