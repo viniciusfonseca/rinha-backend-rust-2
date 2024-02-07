@@ -20,9 +20,6 @@ services:
   api02:
     <<: *api
     hostname: api02
-    environment:
-      - DB_HOST=db
-      - PORT=80
   
   nginx:
     image: nginx:latest

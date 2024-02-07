@@ -2,7 +2,7 @@ FROM rust:1.71.1
 
 RUN apt-get update -yqq && apt-get install -yqq cmake g++
 
-WORKDIR /actix
+WORKDIR /axum
 
 RUN mkdir src; touch src/main.rs
 
