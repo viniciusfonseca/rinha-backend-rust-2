@@ -97,15 +97,14 @@ async fn inserir_transacao(
     ]).await.expect("error running function");
 
     let saldo_atualizado = saldo_atualizado.get(0).unwrap();
-    return if let Some(saldo) = saldo_atualizado.get::<_, Option<i32>>(0) {
-        (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
+    
+    return match saldo_atualizado.get::<_, Option<i32>>(0) {
+        Some(saldo) => (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
             saldo,
             limite: saldo_atualizado.get(1)
-        }).unwrap())
-    }
-    else {
-        (StatusCode::UNPROCESSABLE_ENTITY, String::new())
-    }
+        }).unwrap()),
+        None => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    };
 }
 
 #[derive(Serialize)]
