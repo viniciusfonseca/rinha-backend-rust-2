@@ -1,7 +1,8 @@
 use std::{env, time::SystemTime};
 use std::convert::From;
 
-use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Json, Router};
+use axum::body::Bytes;
+use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, routing::{get, post}, Router};
 use deadpool::Runtime;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::{NoTls, Row};
@@ -56,28 +57,33 @@ struct TransacaoDTO {
 #[derive(Serialize)]
 struct TransacaoResultDTO {
     pub saldo: i32,
-    pub limite: u32
+    pub limite: i32
 }
 
 async fn inserir_transacao(
     Path(id_cliente): Path<i32>,
     State(pg_pool): State<deadpool_postgres::Pool>,
-    Json(payload): Json<TransacaoDTO>,
+    payload: Bytes,
 ) -> impl IntoResponse {
 
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
 
+    let payload = match serde_json::from_slice::<TransacaoDTO>(&payload[..]) {
+        Ok(p) => p,
+        Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    };
+
     let descricao_len = payload.descricao.len();
     if descricao_len < 1 || descricao_len > 10 {
-        return (StatusCode::BAD_REQUEST, String::new());
+        return (StatusCode::UNPROCESSABLE_ENTITY, String::new());
     }
 
     let valor = match payload.tipo.as_str() {
         "d" => -payload.valor,
         "c" => payload.valor,
-        _ => return (StatusCode::BAD_REQUEST, String::new())
+        _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
 
     let conn = pg_pool.get().await
@@ -123,10 +129,8 @@ struct ExtratoTransacaoDTO {
     pub realizada_em: String
 }
 
-impl ToString for SystemTime {
-    fn to_string(&self) -> String {
-        DateTime::<Utc>::from(&self).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-    }
+fn parse_sys_time_as_string(system_time: SystemTime) -> String {
+    DateTime::<Utc>::from(system_time).format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 
 impl ExtratoDTO {
@@ -134,14 +138,14 @@ impl ExtratoDTO {
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
                 total: saldo.get(0),
-                data_extrato: saldo.get(1),
+                data_extrato: parse_sys_time_as_string(saldo.get(1)),
                 limite: saldo.get(2)
             },
             ultimas_transacoes: extrato.iter().map(|t| ExtratoTransacaoDTO {
                 valor: t.get(0),
                 tipo: t.get(1),
                 descricao: t.get(2),
-                realizada_em: DateTime::<Utc>::from(t.get::<_, SystemTime>(3)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+                realizada_em: parse_sys_time_as_string(t.get(3))
             }).collect()
         }
     }

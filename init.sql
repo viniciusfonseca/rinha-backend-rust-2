@@ -36,7 +36,7 @@ BEGIN
 	COMMIT;
 
   INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
-  VALUES (p_id_cliente, p_valor, p_tipo, p_descricao);
+  VALUES (p_id_cliente, ABS(p_valor), p_tipo, p_descricao);
 END;
 $$;
 
