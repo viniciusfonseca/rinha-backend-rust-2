@@ -24,42 +24,34 @@ CREATE PROCEDURE INSERIR_TRANSACAO(
 	p_descricao TEXT,
 	INOUT v_saldo_atualizado INTEGER DEFAULT NULL,
 	INOUT v_limite INTEGER DEFAULT NULL
-) LANGUAGE plpgsql AS $ $ BEGIN
-UPDATE
-	saldos_limites
-SET
-	saldo = saldo + p_valor
-WHERE
-	id_cliente = p_id_cliente
-	AND saldo + p_valor >= - limite RETURNING saldo,
-	limite INTO v_saldo_atualizado,
-	v_limite;
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE saldos_limites
+  SET saldo = saldo + p_valor
+  WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
+  RETURNING saldo, limite INTO v_saldo_atualizado, v_limite;
 
-IF v_saldo_atualizado IS NULL THEN RETURN;
+  IF v_saldo_atualizado IS NULL THEN RETURN; END IF;
 
-END IF;
+  COMMIT;
 
-COMMIT;
-
-INSERT INTO
-	transacoes (id_cliente, valor, tipo, descricao)
-VALUES
-	(p_id_cliente, ABS(p_valor), p_tipo, p_descricao);
-
+  INSERT INTO
+    transacoes (id_cliente, valor, tipo, descricao)
+  VALUES
+    (p_id_cliente, ABS(p_valor), p_tipo, p_descricao);
 END;
+$$;
 
-$ $;
-
-DO $ $ BEGIN
-INSERT INTO
-	saldos_limites (limite, saldo)
-VALUES
-	(1000 * 100, 0),
-	(800 * 100, 0),
-	(10000 * 100, 0),
-	(100000 * 100, 0),
-	(5000 * 100, 0);
-
+DO $$
+BEGIN
+  INSERT INTO saldos_limites (limite, saldo)
+  VALUES
+    (1000 * 100, 0),
+    (800 * 100, 0),
+    (10000 * 100, 0),
+    (100000 * 100, 0),
+	  (5000 * 100, 0);
 END;
-
-$ $;
+$$;
