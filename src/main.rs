@@ -70,7 +70,7 @@ async fn inserir_transacao(
         return (StatusCode::NOT_FOUND, String::new());
     }
 
-    let payload = match serde_json::from_slice::<TransacaoDTO>(&payload[..]) {
+    let payload = match serde_json::from_slice::<TransacaoDTO>(&payload) {
         Ok(p) => p,
         Err(_) => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
@@ -97,7 +97,7 @@ async fn inserir_transacao(
     ]).await.expect("error running function");
 
     let saldo_atualizado = saldo_atualizado.get(0).unwrap();
-    
+
     return match saldo_atualizado.get::<_, Option<i32>>(0) {
         Some(saldo) => (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
             saldo,
