@@ -12,7 +12,12 @@ services:
       resources:
         limits:
           cpus: "0.15"
-          memory: "200MB"
+          memory: "45MB"
+    volumes:
+      - sockets:/tmp/sockets
+      - type: 'volume'
+        source: postgres-storage
+        target: /var/run/postgresql/
 
   api02:
     <<: *api
@@ -22,16 +27,18 @@ services:
     image: nginx:latest
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - sockets:/tmp/sockets
     depends_on:
       - api01
       - api02
     ports:
       - "9999:9999"
+    privileged: true
     deploy:
       resources:
         limits:
           cpus: "0.2"
-          memory: "10MB"
+          memory: "60MB"
 
   db:
     image: postgres:latest
@@ -45,6 +52,9 @@ services:
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres.conf:/docker-entrypoint-initdb.d/postgres.conf
+      - type: 'volume'
+        source: postgres-storage
+        target: /var/run/postgresql/
     command: postgres -c config_file=/docker-entrypoint-initdb.d/postgres.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
@@ -56,9 +66,13 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: "140MB"
+          memory: "400MB"
 
 networks:
   default:
     driver: bridge
     name: rinha-nginx-2024q1
+
+volumes:
+  sockets:
+  postgres-storage:

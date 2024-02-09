@@ -1,3 +1,5 @@
+use std::env;
+
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
 use tokio_postgres::NoTls;
@@ -8,7 +10,7 @@ mod handlers;
 async fn main() {
 
     let mut cfg = deadpool_postgres::Config::new();
-    cfg.host = Some("db".to_string());
+    cfg.host = Some("/var/run/postgresql".into());
     cfg.port = Some(5432);
     cfg.dbname = Some("rinhadb".to_string());
     cfg.user = Some("root".to_string());
@@ -22,12 +24,24 @@ async fn main() {
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
-        .with_state(pg_pool);
+        .with_state::<()>(pg_pool);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:80")).await
-        .expect("error while listening to port 80");
-    
-    axum::serve(listener, app).await
-        .expect("error while serving app");
+    let hostname = env::var("HOSTNAME").unwrap();
 
+    let sockets_dir = "/tmp/sockets";
+    let socket_path = format!("{sockets_dir}/{hostname}.sock");
+    match tokio::fs::remove_file(&socket_path).await {
+        Err(e) => println!("warn: unable to unlink path {socket_path}: {e}"),
+        _ => ()
+    };
+
+    let listener = std::os::unix::net::UnixListener::bind(&socket_path)
+        .expect(format!("error listening to socket {socket_path}").as_str());
+    listener.set_nonblocking(true).unwrap();
+
+    let listener = tokio::net::UnixListener::from_std(listener)
+        .expect("error parsing std listener");
+
+    axum::serve(listener, app.into_make_service()).await
+        .expect("error serving app");
 }
