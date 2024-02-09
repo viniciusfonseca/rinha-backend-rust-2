@@ -58,6 +58,13 @@ services:
           cpus: "1.0"
           memory: "140MB"
 
+  libsql:
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    environment:
+      - SQLD_NODE=standalone
+    ports:
+      - "5000:5000"
+
 networks:
   default:
     driver: bridge
