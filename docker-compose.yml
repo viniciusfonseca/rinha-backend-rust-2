@@ -10,6 +10,7 @@ services:
       - db
     volumes:
       - postgres-storage:/var/run/postgresql
+      - sockets:/tmp/sockets
     deploy:
       resources:
         limits:
@@ -24,11 +25,13 @@ services:
     image: nginx:latest
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - sockets:/tmp/sockets
     depends_on:
       - api01
       - api02
     ports:
       - "9999:9999"
+    privileged: true
     deploy:
       resources:
         limits:
@@ -62,8 +65,9 @@ services:
           memory: "400MB"
 
 volumes:
+  sockets:
   postgres-storage:
-
+    
 networks:
   default:
     driver: bridge
