@@ -28,19 +28,19 @@ CREATE PROCEDURE INSERIR_TRANSACAO(
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  UPDATE saldos_limites
-  SET saldo = saldo + p_valor
-  WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
-  RETURNING saldo, limite INTO v_saldo_atualizado, v_limite;
-
-  IF v_saldo_atualizado IS NULL THEN RETURN; END IF;
-
-  COMMIT;
-
-  INSERT INTO
-    transacoes (id_cliente, valor, tipo, descricao)
-  VALUES
-    (p_id_cliente, ABS(p_valor), p_tipo, p_descricao);
+  WITH UPDATE_SALDO AS (
+		UPDATE saldos_limites
+		SET saldo = saldo + p_valor
+		WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
+		RETURNING saldo, limite
+	), INSERTED AS (
+		INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
+		SELECT p_id_cliente, ABS(p_valor), p_tipo, p_descricao
+		FROM UPDATE_SALDO
+	)
+	SELECT saldo, limite
+	INTO v_saldo_atualizado, v_limite
+	FROM UPDATE_SALDO;
 END;
 $$;
 
