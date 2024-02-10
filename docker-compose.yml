@@ -8,14 +8,14 @@ services:
       - "80"
     depends_on:
       - db
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: "50MB"
     volumes:
       - postgres-storage:/var/run/postgresql
       - sockets:/tmp/sockets
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "50MB"
 
   api02:
     <<: *api
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres.conf:/docker-entrypoint-initdb.d/postgres.conf
-      - postgres-storage:/var/run/postgresql/
+      - postgres-storage:/var/run/postgresql
     command: postgres -c config_file=/docker-entrypoint-initdb.d/postgres.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
@@ -61,14 +61,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "0.8"
           memory: "400MB"
-
-networks:
-  default:
-    driver: bridge
-    name: rinha-nginx-2024q1
 
 volumes:
   sockets:
   postgres-storage:
+    
+networks:
+  default:
+    driver: bridge
+    name: rinha-nginx-2024q1

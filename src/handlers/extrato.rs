@@ -60,11 +60,7 @@ pub async fn handler(
     let conn = pg_pool.get().await
         .expect("error getting db conn");
 
-    let stmt_saldo = conn.prepare_cached("
-        SELECT saldo, NOW(), limite
-        FROM saldos_limites
-        WHERE id_cliente = $1;
-    ").await.expect("error preparing stmt (balance)");
+    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await.expect("error preparing stmt (balance)");
 
     let saldo_rowset = conn.query(&stmt_saldo, &[&id_cliente]).await
         .expect("error querying balance");
@@ -72,13 +68,7 @@ pub async fn handler(
     let saldo = saldo_rowset.get(0)
         .expect("balance not found");
 
-    let stmt_extrato = conn.prepare_cached("
-        SELECT valor, tipo, descricao, realizada_em
-        FROM transacoes
-        WHERE id_cliente = $1
-        ORDER BY id DESC
-        LIMIT 10;
-    ").await.expect("error preparing stmt (transactions)");
+    let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = $1 ORDER BY id DESC LIMIT 10;").await.expect("error preparing stmt (transactions)");
 
     let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
         .expect("error querying transactions");

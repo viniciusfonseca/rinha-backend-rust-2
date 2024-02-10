@@ -10,7 +10,7 @@ mod handlers;
 async fn main() {
 
     let mut cfg = deadpool_postgres::Config::new();
-    cfg.host = Some("/var/run/postgresql".into());
+    cfg.host = Some("/var/run/postgresql".to_string());
     cfg.port = Some(5432);
     cfg.dbname = Some("rinhadb".to_string());
     cfg.user = Some("root".to_string());
