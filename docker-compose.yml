@@ -12,12 +12,10 @@ services:
       resources:
         limits:
           cpus: "0.15"
-          memory: "45MB"
+          memory: "50MB"
     volumes:
+      - postgres-storage:/var/run/postgresql
       - sockets:/tmp/sockets
-      - type: 'volume'
-        source: postgres-storage
-        target: /var/run/postgresql/
 
   api02:
     <<: *api
@@ -38,7 +36,7 @@ services:
       resources:
         limits:
           cpus: "0.2"
-          memory: "60MB"
+          memory: "50MB"
 
   db:
     image: postgres:latest
@@ -52,9 +50,7 @@ services:
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - ./postgres.conf:/docker-entrypoint-initdb.d/postgres.conf
-      - type: 'volume'
-        source: postgres-storage
-        target: /var/run/postgresql/
+      - postgres-storage:/var/run/postgresql/
     command: postgres -c config_file=/docker-entrypoint-initdb.d/postgres.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready"]
@@ -65,7 +61,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.0"
+          cpus: "1"
           memory: "400MB"
 
 networks:

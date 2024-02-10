@@ -35,8 +35,6 @@ BEGIN
 
   IF v_saldo_atualizado IS NULL THEN RETURN; END IF;
 
-  COMMIT;
-
   INSERT INTO
     transacoes (id_cliente, valor, tipo, descricao)
   VALUES
