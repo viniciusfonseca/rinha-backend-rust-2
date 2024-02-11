@@ -1,9 +1,11 @@
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio_postgres::Row;
+
+use crate::AppState;
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -50,14 +52,14 @@ impl ExtratoDTO {
 
 pub async fn handler(
     Path(id_cliente): Path<i32>,
-    State(pg_pool): State<deadpool_postgres::Pool>,
+    State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
 
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
 
-    let conn = pg_pool.get().await
+    let conn = app_state.pg_pool.get().await
         .expect("error getting db conn");
 
     let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await.expect("error preparing stmt (balance)");
