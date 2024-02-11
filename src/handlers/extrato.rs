@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
+use libsql_client::Statement;
 use serde::Serialize;
 use tokio_postgres::Row;
 
@@ -50,19 +51,19 @@ impl ExtratoDTO {
 
 pub async fn handler(
     Path(id_cliente): Path<i32>,
-    State(pg_pool): State<deadpool_postgres::Pool>,
+    State(db_client): State<libsql_client::Client>,
 ) -> impl IntoResponse {
 
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
 
-    let conn = pg_pool.get().await
-        .expect("error getting db conn");
+    let stmt_saldo = Statement::with_args("
+        SELECT saldo, NOW(), limite
+        FROM saldos_limites
+        WHERE id_cliente = ?;", &[id_cliente]).await.expect("error preparing stmt (balance)");
 
-    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await.expect("error preparing stmt (balance)");
-
-    let saldo_rowset = conn.query(&stmt_saldo, &[&id_cliente]).await
+    let saldo_rowset = db_client.execute(&stmt_saldo).await
         .expect("error querying balance");
 
     let saldo = saldo_rowset.get(0)

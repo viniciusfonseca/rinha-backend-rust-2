@@ -6,10 +6,10 @@ services:
     hostname: api01
     expose:
       - "80"
-    depends_on:
-      - db
+    environment:
+      LIBSQL_CLIENT_URL: http://db
     volumes:
-      - postgres-storage:/var/run/postgresql
+      - libsql:/tmp
     deploy:
       resources:
         limits:
@@ -35,41 +35,14 @@ services:
           cpus: "0.2"
           memory: "50MB"
 
-  db:
-    image: postgres:latest
-    hostname: db
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: rinhadb
-    ports:
-      - "5432:5432"
-    volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./postgres.conf:/docker-entrypoint-initdb.d/postgres.conf
-      - postgres-storage:/var/run/postgresql
-    command: postgres -c config_file=/docker-entrypoint-initdb.d/postgres.conf
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: "0.8"
-          memory: "400MB"
-
-volumes:
-  postgres-storage:
-
   libsql:
     image: ghcr.io/tursodatabase/libsql-server:latest
+    hostname: db
     environment:
       - SQLD_NODE=standalone
     ports:
       - "5000:5000"
+
 
 networks:
   default:
