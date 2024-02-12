@@ -52,12 +52,14 @@ CREATE PROCEDURE INSERIR_TRANSACAO_FAST(
 	INOUT v_saldo_atualizado INTEGER DEFAULT NULL,
 	INOUT v_limite INTEGER DEFAULT NULL
 )
-LANGUAGE SQL
+LANGUAGE plpgsql
 AS $$
+BEGIN
 	UPDATE saldos_limites
 	SET saldo = saldo + p_valor
 	WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
 	RETURNING saldo, limite INTO v_saldo_atualizado, v_limite;
+END;
 $$;
 
 DO $$

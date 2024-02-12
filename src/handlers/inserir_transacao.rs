@@ -83,7 +83,7 @@ async fn batch_insert(app_state: Arc<AppState>, id_cliente: i32, valor: i32, pay
     let conn = app_state.pg_pool.get().await
         .expect("error getting db conn");
 
-    let saldo_atualizado = conn.query("SELECT INSERIR_TRANSACAO_FAST($1, $2);", &[
+    let saldo_atualizado = conn.query("CALL INSERIR_TRANSACAO_FAST($1, $2);", &[
         &id_cliente,
         &valor
     ]).await.expect("error running proc");
@@ -103,8 +103,9 @@ async fn batch_insert(app_state: Arc<AppState>, id_cliente: i32, valor: i32, pay
 }
 
 pub async fn flush_queue(app_state: Arc<AppState>) {
-   let mut sql_builder = SqlBuilder::insert_into("transacoes");
-   sql_builder
+    if app_state.queue.len() == 0 { return; }
+    let mut sql_builder = SqlBuilder::insert_into("transacoes");
+    sql_builder
         .field("id_cliente")
         .field("valor")
         .field("tipo")
@@ -112,15 +113,17 @@ pub async fn flush_queue(app_state: Arc<AppState>) {
     while app_state.queue.len() > 0 {
         let (id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
         sql_builder.values(&[
-            &quote(id_cliente),
-            &quote(valor),
+            &id_cliente.to_string(),
+            &valor.to_string(),
             &quote(tipo),
             &quote(descricao),
         ]);
     }
     {
-        let conn = app_state.pg_pool.get().await
-            .expect("error getting db conn");
-        _ = conn.batch_execute(&sql_builder.sql().unwrap()).await;
+        let _ = match app_state.pg_pool.get().await {
+            Ok(conn) => 
+                conn.batch_execute(&sql_builder.sql().unwrap()).await,
+            _ => Ok(())
+        };
     }
 }

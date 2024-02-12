@@ -50,7 +50,7 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             let mut traffic_observer = app_state_async.traffic_observer.write().await;
-            traffic_observer.batch_activated = traffic_observer.count > 40;
+            traffic_observer.batch_activated = traffic_observer.count > 125;
             traffic_observer.count = 0;
             inserir_transacao::flush_queue(app_state_async.clone()).await;
             tokio::time::sleep(Duration::from_secs(1)).await;
