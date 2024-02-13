@@ -30,6 +30,4 @@ pub async fn movimenta_saldo(id_cliente: i32, tipo: &String, valor: i32) -> Resu
                 s.get(1).unwrap().parse::<i32>().unwrap()
             ))
         }
-
 }
-

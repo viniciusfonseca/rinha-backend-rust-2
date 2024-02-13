@@ -46,7 +46,8 @@ async fn main() {
     let mut saldos = Vec::new();
     let mut limites = Vec::new();
 
-    if std::env::var("MEM_SERVER").is_ok() {
+    let is_mem_server = std::env::var("MEM_SERVER").is_ok();
+    if is_mem_server {
         saldos.push(0.into());
         saldos.push(0.into());
         saldos.push(0.into());
@@ -67,17 +68,19 @@ async fn main() {
         limites
     });
 
-    let app_state_async = app_state.clone();
-    tokio::spawn(async move {
-        loop {
-            {
-                let mut traffic_observer = app_state_async.traffic_observer.write().await;
-                traffic_observer.batch_activated = traffic_observer.count > 3000;
+    if !is_mem_server {
+        let app_state_async = app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                {
+                    let mut traffic_observer = app_state_async.traffic_observer.write().await;
+                    traffic_observer.batch_activated = traffic_observer.count > 3000;
+                }
+                inserir_transacao::flush_queue(app_state_async.clone()).await;
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
-            inserir_transacao::flush_queue(app_state_async.clone()).await;
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    });
+        });
+    }
 
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))

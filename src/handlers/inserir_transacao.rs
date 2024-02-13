@@ -47,6 +47,7 @@ pub async fn handler(
     {
         app_state.traffic_observer.write().await.count += 1;
     }
+
     match movimenta_saldo(id_cliente, &payload.tipo, valor).await {
         Ok((saldo, limite)) =>
             if app_state.traffic_observer.read().await.batch_activated {
@@ -69,26 +70,46 @@ pub async fn handler(
 }
 
 pub async fn flush_queue(app_state: Arc<AppState>) {
-    if app_state.queue.len() == 0 { return; }
-    let mut sql_builder = SqlBuilder::insert_into("transacoes");
-    sql_builder
-        .field("id_cliente")
-        .field("valor")
-        .field("tipo")
-        .field("descricao");
-    while app_state.queue.len() > 0 {
-        let (id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
-        sql_builder.values(&[
-            &id_cliente.to_string(),
-            &valor.to_string(),
-            &quote(tipo),
-            &quote(descricao),
-        ]);
+    let mut sql = String::new();
+    if app_state.queue.len() > 0 {
+        let mut sql_builder = SqlBuilder::insert_into("transacoes");
+        sql_builder
+            .field("id_cliente")
+            .field("valor")
+            .field("tipo")
+            .field("descricao");
+        while app_state.queue.len() > 0 {
+            let (id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
+            sql_builder.values(&[
+                &id_cliente.to_string(),
+                &valor.to_string(),
+                &quote(tipo),
+                &quote(descricao),
+            ]);
+        }
+        sql.push_str(&sql_builder.sql().unwrap());
     }
+    sql.push_str("
+        WITH transacoes_processadas AS (
+            UPDATE transacoes
+            SET p = 1
+            WHERE p = 0 
+            RETURNING id_cliente, valor, tipo
+        ),
+        saldos_pendentes AS (
+            SELECT SUM(CASE WHEN tipo = 'd' THEN -valor ELSE valor END) AS valor, id_cliente
+            FROM transacoes_processadas
+            GROUP BY id_cliente
+        )
+        UPDATE saldos_limites sl
+        SET saldo = saldo + saldos_pendentes.valor
+        FROM saldos_pendentes
+        WHERE sl.id_cliente = saldos_pendentes.id_cliente;
+    ");
     {
         let _ = match app_state.pg_pool.get().await {
             Ok(conn) => 
-                conn.batch_execute(&sql_builder.sql().unwrap()).await,
+                conn.batch_execute(&sql).await,
             _ => Ok(())
         };
     }
