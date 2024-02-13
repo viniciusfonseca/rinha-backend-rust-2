@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio_postgres::Row;
 
-use crate::AppState;
+use crate::{socket_client::consulta_saldo, AppState};
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -33,12 +33,12 @@ fn parse_sys_time_as_string(system_time: SystemTime) -> String {
 }
 
 impl ExtratoDTO {
-    pub fn from(saldo: &Row, extrato: Vec<Row>) -> ExtratoDTO {
+    pub fn from(saldo: i32, limite: i32, extrato: Vec<Row>) -> ExtratoDTO {
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
-                total: saldo.get(0),
-                data_extrato: parse_sys_time_as_string(saldo.get(1)),
-                limite: saldo.get(2)
+                total: saldo,
+                data_extrato: parse_sys_time_as_string(SystemTime::now()),
+                limite
             },
             ultimas_transacoes: extrato.iter().map(|t| ExtratoTransacaoDTO {
                 valor: t.get(0),
@@ -58,17 +58,11 @@ pub async fn handler(
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
-
+    
+    let (saldo, limite) = consulta_saldo(id_cliente).await;
+    
     let conn = app_state.pg_pool.get().await
         .expect("error getting db conn");
-
-    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await.expect("error preparing stmt (balance)");
-
-    let saldo_rowset = conn.query(&stmt_saldo, &[&id_cliente]).await
-        .expect("error querying balance");
-
-    let saldo = saldo_rowset.get(0)
-        .expect("balance not found");
 
     let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = $1 ORDER BY id DESC LIMIT 10;").await.expect("error preparing stmt (transactions)");
 
@@ -76,5 +70,5 @@ pub async fn handler(
         .expect("error querying transactions");
 
 
-    (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, extrato)).unwrap())
+    (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
 }

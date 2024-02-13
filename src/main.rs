@@ -1,4 +1,4 @@
-use std::{env, sync::Arc, time::Duration};
+use std::{env, sync::{Arc, Mutex}, time::Duration};
 
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
@@ -9,11 +9,14 @@ use traffic_observer::TrafficObserver;
 
 mod handlers;
 mod traffic_observer;
+mod socket_client;
 
 struct AppState {
     pg_pool: deadpool_postgres::Pool,
     traffic_observer: RwLock<TrafficObserver>,
-    queue: AppQueue
+    queue: AppQueue,
+    saldos: Vec<Mutex<i32>>,
+    limites: Vec<i32>
 }
 
 type QueueEvent = (i32, i32, String, String);
@@ -39,28 +42,48 @@ async fn main() {
     });
 
     let queue = AppQueue::new();
-    
+
+    let mut saldos = Vec::new();
+    let mut limites = Vec::new();
+
+    if std::env::var("MEM_SERVER").is_ok() {
+        saldos.push(0.into());
+        saldos.push(0.into());
+        saldos.push(0.into());
+        saldos.push(0.into());
+        saldos.push(0.into());
+        limites.push(1000 * 100);
+        limites.push(800 * 100);
+        limites.push(10000 * 100);
+        limites.push(100000 * 100);
+        limites.push(5000 * 100);
+    }
+
     let app_state = Arc::new(AppState {
         pg_pool,
         traffic_observer,
-        queue
+        queue,
+        saldos,
+        limites
     });
 
     let app_state_async = app_state.clone();
     tokio::spawn(async move {
         loop {
-            let mut traffic_observer = app_state_async.traffic_observer.write().await;
-            traffic_observer.batch_activated = traffic_observer.count > 125;
-            traffic_observer.count = 0;
+            {
+                let mut traffic_observer = app_state_async.traffic_observer.write().await;
+                traffic_observer.batch_activated = traffic_observer.count > 3000;
+            }
             inserir_transacao::flush_queue(app_state_async.clone()).await;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 
-
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
+        .route("/c/:i", get(handlers::saldo::consulta))
+        .route("/c/:i/:t/:v", get(handlers::saldo::movimento))
         .with_state::<()>(app_state);
 
     let hostname = env::var("HOSTNAME").unwrap();

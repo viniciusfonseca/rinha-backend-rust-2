@@ -3,7 +3,7 @@ use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::AppState;
+use crate::{socket_client::movimenta_saldo, AppState};
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -47,58 +47,24 @@ pub async fn handler(
     {
         app_state.traffic_observer.write().await.count += 1;
     }
-
-    if app_state.traffic_observer.read().await.batch_activated {
-        batch_insert(app_state.clone(), id_cliente, valor, payload).await
-    }
-    else {
-        normal_insert(app_state.pg_pool.clone(), id_cliente, valor, payload).await
-    }
-
-}
-
-async fn normal_insert(pg_pool: deadpool_postgres::Pool, id_cliente: i32, valor: i32, payload: TransacaoDTO) -> (StatusCode, std::string::String) {
-    let conn = pg_pool.get().await
-        .expect("error getting db conn");
-
-    let saldo_atualizado = conn.query("CALL INSERIR_TRANSACAO($1, $2, $3, $4);", &[
-        &id_cliente,
-        &valor,
-        &payload.tipo,
-        &payload.descricao
-    ]).await.expect("error running proc");
-
-    let saldo_atualizado = saldo_atualizado.get(0).unwrap();
-
-    match saldo_atualizado.get::<_, Option<i32>>(0) {
-        Some(saldo) => (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
-            saldo,
-            limite: saldo_atualizado.get(1)
-        }).unwrap()),
-        None => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
-    }
-}
-
-async fn batch_insert(app_state: Arc<AppState>, id_cliente: i32, valor: i32, payload: TransacaoDTO) -> (StatusCode, std::string::String) {
-    let conn = app_state.pg_pool.get().await
-        .expect("error getting db conn");
-
-    let saldo_atualizado = conn.query("CALL INSERIR_TRANSACAO_FAST($1, $2);", &[
-        &id_cliente,
-        &valor
-    ]).await.expect("error running proc");
-
-    let saldo_atualizado = saldo_atualizado.get(0).unwrap();
-
-    match saldo_atualizado.get::<_, Option<i32>>(0) {
-        Some(saldo) => {
-            app_state.queue.push((id_cliente, valor, payload.tipo, payload.descricao));
-            return (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
-                saldo,
-                limite: saldo_atualizado.get(1)
-            }).unwrap())
-        },
-        None => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    match movimenta_saldo(id_cliente, &payload.tipo, valor).await {
+        Ok((saldo, limite)) =>
+            if app_state.traffic_observer.read().await.batch_activated {
+                app_state.queue.push((id_cliente, valor, payload.tipo, payload.descricao));
+                (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
+            }
+            else {
+                let conn = app_state.pg_pool.get().await
+                    .expect("error getting db conn");
+                conn.execute("
+                    INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
+                    VALUES ($1, $2, $3, $4);
+                ", &[&id_cliente, &valor, &payload.tipo, &payload.descricao]).await
+                    .expect("error running insert");
+                (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
+            }
+        ,
+        Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
 }
 
