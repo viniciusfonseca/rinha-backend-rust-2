@@ -84,7 +84,7 @@ async fn main() {
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
         .route("/c/:i", get(handlers::saldo::consulta))
-        .route("/c/:i/:t/:v", get(handlers::saldo::movimento))
+        .route("/c/:i/:v", get(handlers::saldo::movimento))
         .with_state::<()>(app_state);
 
     let hostname = env::var("HOSTNAME").unwrap();

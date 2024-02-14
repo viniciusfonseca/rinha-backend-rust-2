@@ -48,7 +48,7 @@ pub async fn handler(
         app_state.traffic_observer.write().await.count += 1;
     }
 
-    match movimenta_saldo(id_cliente, &payload.tipo, valor).await {
+    match movimenta_saldo(id_cliente, valor).await {
         Ok((saldo, limite)) =>
             if app_state.traffic_observer.read().await.batch_activated {
                 app_state.queue.push((id_cliente, valor, payload.tipo, payload.descricao));

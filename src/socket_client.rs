@@ -13,7 +13,7 @@ pub async fn make_socket_request(path: String) -> String {
     let client: Client<UnixConnector, Full<Bytes>> = Client::unix();
 
     let mut response = client.get(url).await
-        .expect("error getting response (consulta)")
+        .expect("error getting socket response")
         .into_response();
 
     let mut response_body = String::new();
@@ -38,9 +38,9 @@ pub async fn consulta_saldo(id_cliente: i32) -> (i32, i32) {
     )
 }
 
-pub async fn movimenta_saldo(id_cliente: i32, tipo: &String, valor: i32) -> Result<(i32, i32), anyhow::Error> {
+pub async fn movimenta_saldo(id_cliente: i32, valor: i32) -> Result<(i32, i32), anyhow::Error> {
 
-    let response = make_socket_request(format!("/c/{id_cliente}/{tipo}/{valor}")).await;
+    let response = make_socket_request(format!("/c/{id_cliente}/{valor}")).await;
     let split = response.split(",").collect::<Vec<&str>>();
     
     if split.len() == 1 {

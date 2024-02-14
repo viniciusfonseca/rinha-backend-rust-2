@@ -16,13 +16,12 @@ pub async fn consulta(
 }
 
 pub async fn movimento(
-    Path((id_cliente, tipo, mut valor)): Path<(usize, String, i32)>,
+    Path((id_cliente, valor)): Path<(usize, i32)>,
     State(app_state): State<Arc<AppState>>
 ) -> impl IntoResponse {
-    if tipo.eq("d") { valor = -valor }
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
     let mut saldo = app_state.saldos
-        .get(id_cliente).unwrap()
+        .get(id_cliente - 1).unwrap()
         .lock().unwrap();
     let saldo_atualizado = *saldo + valor;
     if saldo_atualizado < -limite {
