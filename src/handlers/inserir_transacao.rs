@@ -57,10 +57,11 @@ pub async fn handler(
             else {
                 let conn = app_state.pg_pool.get().await
                     .expect("error getting db conn");
-                conn.execute("
+                let stmt = conn.prepare_cached("
                     INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
                     VALUES ($1, $2, $3, $4);
-                ", &[&id_cliente, &valor, &payload.tipo, &payload.descricao]).await
+                ").await.expect("error preparing stmt (inserir_transacao)");
+                conn.execute(&stmt, &[&id_cliente, &valor, &payload.tipo, &payload.descricao]).await
                     .expect("error running insert");
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }

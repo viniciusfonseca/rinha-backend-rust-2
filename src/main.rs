@@ -48,11 +48,9 @@ async fn main() {
 
     let is_mem_server = std::env::var("MEM_SERVER").is_ok();
     if is_mem_server {
-        saldos.push(0.into());
-        saldos.push(0.into());
-        saldos.push(0.into());
-        saldos.push(0.into());
-        saldos.push(0.into());
+        for _ in 1..6 {
+            saldos.push(0.into());
+        }
         limites.push(1000 * 100);
         limites.push(800 * 100);
         limites.push(10000 * 100);
