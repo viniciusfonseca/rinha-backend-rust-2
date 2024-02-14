@@ -19,22 +19,25 @@ pub async fn movimento(
     Path((id_cliente, valor)): Path<(usize, i32)>,
     State(app_state): State<Arc<AppState>>
 ) -> impl IntoResponse {
+    if id_cliente == 0 {
+        return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    }
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
-    let mut saldo = app_state.saldos
-        .get(id_cliente - 1).unwrap()
-        .lock().unwrap();
-    let saldo_atualizado = *saldo + valor;
-    if saldo_atualizado < -limite {
-        (StatusCode::UNPROCESSABLE_ENTITY, String::new())
-    }
-    else {
-        let _ = std::mem::replace(&mut *saldo, saldo_atualizado);
-        let id_transacao = {
-            let mut id_transacao = app_state.id_transacao.lock().unwrap();
-            let novo_id_transacao = *id_transacao + 1;
-            let _ = std::mem::replace(&mut *id_transacao, novo_id_transacao);
-            novo_id_transacao
-        };
-        (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
-    }
+    let saldo_atualizado = {
+        let mut saldo = app_state.saldos
+            .get(id_cliente - 1).unwrap()
+            .lock().unwrap();
+        let saldo_atualizado = *saldo + valor;
+        if saldo_atualizado < -limite {
+            return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+        }
+        *saldo = saldo_atualizado;
+        saldo_atualizado
+    };
+    let id_transacao = {
+        let mut id_transacao = app_state.id_transacao.lock().unwrap();
+        *id_transacao += 1;
+        *id_transacao
+    };
+    (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
 }

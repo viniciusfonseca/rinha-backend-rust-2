@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
@@ -18,9 +19,11 @@ struct TransacaoResultDTO {
     pub limite: i32
 }
 
+#[axum::debug_handler]
 pub async fn handler(
-    Path(id_cliente): Path<i32>,
+    Path(mut id_cliente): Path<i32>,
     State(app_state): State<Arc<AppState>>,
+    headers: HeaderMap,
     payload: Bytes,
 ) -> impl IntoResponse {
 
@@ -44,10 +47,18 @@ pub async fn handler(
         _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
 
+    if let Some(user_agent) = headers.get("user-agent") {
+        if user_agent.to_str().unwrap().eq("W") {
+            id_cliente = 0;
+        }
+        else {
+            *app_state.warming_up.lock().unwrap() = false;
+        }
+    }
+
     {
         let mut req_count = app_state.req_count.lock().unwrap();
-        let new_req_count = *req_count + 1;
-        let _ = std::mem::replace(&mut *req_count, new_req_count);
+        *req_count += 1;
     }
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {

@@ -18,7 +18,8 @@ struct AppState {
     id_transacao: Mutex<i32>,
     req_count: Mutex<i32>,
     batch_activated: Mutex<bool>,
-    socket_client: HyperClient
+    socket_client: HyperClient,
+    warming_up: Mutex<bool>
 }
 
 type QueueEvent = (i32, i32, String, String);
@@ -54,8 +55,6 @@ async fn main() {
         limites.push(10000 * 100);
         limites.push(100000 * 100);
         limites.push(5000 * 100);
-
-        // let http_client = reqwest::Client::new();
     }
 
     let socket_client = HyperClient::unix();
@@ -68,7 +67,8 @@ async fn main() {
         id_transacao: Mutex::new(0),
         req_count: Mutex::new(0),
         batch_activated: Mutex::new(false),
-        socket_client
+        socket_client,
+        warming_up: Mutex::new(true)
     });
 
     if !is_mem_server {
@@ -83,6 +83,35 @@ async fn main() {
                 inserir_transacao::flush_queue(app_state_async.clone()).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
+        });
+    }
+    else {
+        let app_state_async = app_state.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            let mut t = Vec::new();
+
+            let http_client = reqwest::Client::new();
+
+            let mount_body = || {
+                format!("{{\"valor\":1,\"tipo\":\"d\",\"descricao\":\"VAF\"}}")
+            };
+
+            loop {
+                if !*app_state_async.warming_up.lock().unwrap() { break; }
+                for _ in 0..75 {
+                    t.push(
+                        http_client.post("http://172.17.0.1:9999/clientes/1/transacoes")
+                            .header("User-Agent", "W")
+                            .body(mount_body())
+                            .send()
+                    );
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+
+            futures::future::join_all(t).await;
         });
     }
 
