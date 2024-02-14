@@ -22,7 +22,7 @@ struct AppState {
     warming_up: AtomicBool
 }
 
-type QueueEvent = (i32, i32, String, String);
+type QueueEvent = (i32, i32, i32, String, String);
 pub type AppQueue = deadqueue::unlimited::Queue<QueueEvent>;
 type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
 
@@ -108,10 +108,11 @@ async fn main() {
                             .send()
                     );
                 }
+                futures::future::join_all(&mut t).await;
+                t.clear();
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
 
-            futures::future::join_all(t).await;
         });
     }
 

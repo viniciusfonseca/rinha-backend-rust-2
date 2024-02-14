@@ -20,6 +20,8 @@ services:
   api02:
     <<: *api
     hostname: api02
+    environment:
+      UPDATER: 1
 
   api03:
     <<: *api

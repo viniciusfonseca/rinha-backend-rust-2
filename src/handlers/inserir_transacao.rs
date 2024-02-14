@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
@@ -56,20 +56,20 @@ pub async fn handler(
         }
     }
 
-    app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
         Ok((saldo, limite, id_transacao)) =>
-            if app_state.batch_activated.load(std::sync::atomic::Ordering::SeqCst) {
-                app_state.queue.push((id_cliente, valor.abs(), payload.tipo, payload.descricao));
+            if app_state.batch_activated.load(std::sync::atomic::Ordering::Relaxed) {
+                app_state.queue.push((id_transacao, id_cliente, valor.abs(), payload.tipo, payload.descricao));
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }
             else {
                 let conn = app_state.pg_pool.get().await
                     .expect("error getting db conn");
                 let stmt = conn.prepare_cached("
-                    INSERT INTO transacoes (id, id_cliente, valor, tipo, descricao)
-                    VALUES ($1, $2, $3, $4, $5);
+                    INSERT INTO transacoes (id, id_cliente, valor, tipo, descricao, p)
+                    VALUES ($1, $2, $3, $4, $5, 1);
                 ").await.expect("error preparing stmt (inserir_transacao)");
                 conn.execute(&stmt, &[&id_transacao, &id_cliente, &valor.abs(), &payload.tipo, &payload.descricao]).await
                     .expect("error running insert");
@@ -85,42 +85,52 @@ pub async fn flush_queue(app_state: Arc<AppState>) {
     if app_state.queue.len() > 0 {
         let mut sql_builder = SqlBuilder::insert_into("transacoes");
         sql_builder
+            .field("id")
             .field("id_cliente")
             .field("valor")
             .field("tipo")
-            .field("descricao");
+            .field("descricao")
+            .field("p");
         while app_state.queue.len() > 0 {
-            let (id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
+            let (id_transacao, id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
             sql_builder.values(&[
+                &id_transacao.to_string(),
                 &id_cliente.to_string(),
                 &valor.to_string(),
                 &quote(tipo),
                 &quote(descricao),
+                &0.to_string()
             ]);
         }
         sql.push_str(&sql_builder.sql().unwrap());
     }
-    sql.push_str("
-        WITH transacoes_processadas AS (
-            UPDATE transacoes
-            SET p = 1
-            WHERE p = 0 
-            RETURNING id_cliente, valor, tipo
-        ),
-        saldos_pendentes AS (
-            SELECT SUM(CASE WHEN tipo = 'd' THEN -valor ELSE valor END) AS valor, id_cliente
-            FROM transacoes_processadas
-            GROUP BY id_cliente
-        )
-        UPDATE saldos_limites sl
-        SET saldo = saldo + saldos_pendentes.valor
-        FROM saldos_pendentes
-        WHERE sl.id_cliente = saldos_pendentes.id_cliente;
-    ");
+    if env::var("UPDATER").is_ok() {
+        sql.push_str("
+            WITH transacoes_processadas AS (
+                UPDATE transacoes
+                SET p = 1
+                WHERE p = 0 
+                RETURNING id_cliente, valor, tipo
+            ),
+            saldos_pendentes AS (
+                SELECT SUM(CASE WHEN tipo = 'd' THEN -valor ELSE valor END) AS valor, id_cliente
+                FROM transacoes_processadas
+                GROUP BY id_cliente
+            )
+            UPDATE saldos_limites sl
+            SET saldo = saldo + saldos_pendentes.valor
+            FROM saldos_pendentes
+            WHERE sl.id_cliente = saldos_pendentes.id_cliente;
+        ");
+    }
+    if sql.is_empty() { return; }
     {
         let _ = match app_state.pg_pool.get().await {
             Ok(conn) => 
-                conn.batch_execute(&sql).await,
+                match conn.batch_execute(&sql).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => { eprintln!("error running batch: {e}"); Err(e) },
+                },
             _ => Ok(())
         };
     }
