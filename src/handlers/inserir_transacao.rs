@@ -52,18 +52,15 @@ pub async fn handler(
             id_cliente = 0;
         }
         else {
-            *app_state.warming_up.lock().unwrap() = false;
+            app_state.warming_up.store(false, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
-    {
-        let mut req_count = app_state.req_count.lock().unwrap();
-        *req_count += 1;
-    }
+    app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
         Ok((saldo, limite, id_transacao)) =>
-            if *app_state.batch_activated.lock().unwrap() {
+            if app_state.batch_activated.load(std::sync::atomic::Ordering::SeqCst) {
                 app_state.queue.push((id_cliente, valor.abs(), payload.tipo, payload.descricao));
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }

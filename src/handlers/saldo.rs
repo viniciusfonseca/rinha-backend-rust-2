@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 
@@ -9,9 +9,9 @@ pub async fn consulta(
     State(app_state): State<Arc<AppState>>
 ) -> impl IntoResponse {
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
-    let saldo = *app_state.saldos
+    let saldo = app_state.saldos
         .get(id_cliente - 1).unwrap()
-        .lock().unwrap();
+        .load(std::sync::atomic::Ordering::SeqCst);
     (StatusCode::OK, format!("{saldo},{limite}"))
 }
 
@@ -24,20 +24,16 @@ pub async fn movimento(
     }
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
     let saldo_atualizado = {
-        let mut saldo = app_state.saldos
-            .get(id_cliente - 1).unwrap()
-            .lock().unwrap();
-        let saldo_atualizado = *saldo + valor;
+        let saldo_atomic = app_state.saldos.get(id_cliente - 1).unwrap();
+        let saldo_atualizado = saldo_atomic.load(Ordering::SeqCst) + valor;
         if saldo_atualizado < -limite {
             return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
         }
-        *saldo = saldo_atualizado;
+        saldo_atomic.store(saldo_atualizado, Ordering::SeqCst);
         saldo_atualizado
     };
     let id_transacao = {
-        let mut id_transacao = app_state.id_transacao.lock().unwrap();
-        *id_transacao += 1;
-        *id_transacao
+        app_state.id_transacao.fetch_add(1, Ordering::SeqCst) + 1
     };
     (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
 }

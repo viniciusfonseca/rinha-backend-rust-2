@@ -1,4 +1,4 @@
-use std::{env, sync::{Arc, Mutex}, time::Duration};
+use std::{env, sync::{atomic::{AtomicBool, AtomicI32}, Arc}, time::Duration};
 
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
@@ -13,13 +13,13 @@ mod socket_client;
 struct AppState {
     pg_pool: deadpool_postgres::Pool,
     queue: AppQueue,
-    saldos: Vec<Mutex<i32>>,
+    saldos: Vec<AtomicI32>,
     limites: Vec<i32>,
-    id_transacao: Mutex<i32>,
-    req_count: Mutex<i32>,
-    batch_activated: Mutex<bool>,
+    id_transacao: AtomicI32,
+    req_count: AtomicI32,
+    batch_activated: AtomicBool,
     socket_client: HyperClient,
-    warming_up: Mutex<bool>
+    warming_up: AtomicBool
 }
 
 type QueueEvent = (i32, i32, String, String);
@@ -48,7 +48,7 @@ async fn main() {
     let is_mem_server = std::env::var("MEM_SERVER").is_ok();
     if is_mem_server {
         for _ in 1..6 {
-            saldos.push(0.into());
+            saldos.push(AtomicI32::new(0));
         }
         limites.push(1000 * 100);
         limites.push(800 * 100);
@@ -64,11 +64,11 @@ async fn main() {
         queue,
         saldos,
         limites,
-        id_transacao: Mutex::new(0),
-        req_count: Mutex::new(0),
-        batch_activated: Mutex::new(false),
+        id_transacao: AtomicI32::new(0),
+        req_count: AtomicI32::new(0),
+        batch_activated: AtomicBool::new(false),
         socket_client,
-        warming_up: Mutex::new(true)
+        warming_up: AtomicBool::new(true)
     });
 
     if !is_mem_server {
@@ -76,9 +76,9 @@ async fn main() {
         tokio::spawn(async move {
             loop {
                 {
-                    let mut batch_activated = app_state_async.batch_activated.lock().unwrap();
-                    let req_count = app_state_async.req_count.lock().unwrap();
-                    let _ = std::mem::replace(&mut *batch_activated, *req_count > 3000);
+                    let batch_activated = &app_state_async.batch_activated;
+                    let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::SeqCst);
+                    batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::SeqCst);
                 }
                 inserir_transacao::flush_queue(app_state_async.clone()).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
@@ -99,7 +99,7 @@ async fn main() {
             };
 
             loop {
-                if !*app_state_async.warming_up.lock().unwrap() { break; }
+                if !app_state_async.warming_up.load(std::sync::atomic::Ordering::SeqCst) { break; }
                 for _ in 0..75 {
                     t.push(
                         http_client.post("http://172.17.0.1:9999/clientes/1/transacoes")
