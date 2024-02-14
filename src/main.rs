@@ -3,6 +3,8 @@ use std::{env, sync::{Arc, Mutex}, time::Duration};
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
 use handlers::inserir_transacao;
+use http_body_util::Full;
+use hyperlocal::{UnixClientExt, UnixConnector};
 use tokio_postgres::NoTls;
 
 mod handlers;
@@ -15,11 +17,13 @@ struct AppState {
     limites: Vec<i32>,
     id_transacao: Mutex<i32>,
     req_count: Mutex<i32>,
-    batch_activated: Mutex<bool>
+    batch_activated: Mutex<bool>,
+    socket_client: HyperClient
 }
 
 type QueueEvent = (i32, i32, String, String);
 pub type AppQueue = deadqueue::unlimited::Queue<QueueEvent>;
+type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
 
 #[tokio::main]
 async fn main() {
@@ -50,7 +54,11 @@ async fn main() {
         limites.push(10000 * 100);
         limites.push(100000 * 100);
         limites.push(5000 * 100);
+
+        // let http_client = reqwest::Client::new();
     }
+
+    let socket_client = HyperClient::unix();
 
     let app_state = Arc::new(AppState {
         pg_pool,
@@ -59,7 +67,8 @@ async fn main() {
         limites,
         id_transacao: Mutex::new(0),
         req_count: Mutex::new(0),
-        batch_activated: Mutex::new(false)
+        batch_activated: Mutex::new(false),
+        socket_client
     });
 
     if !is_mem_server {
@@ -68,7 +77,7 @@ async fn main() {
             loop {
                 {
                     let mut batch_activated = app_state_async.batch_activated.lock().unwrap();
-                    let mut req_count = app_state_async.req_count.lock().unwrap();
+                    let req_count = app_state_async.req_count.lock().unwrap();
                     let _ = std::mem::replace(&mut *batch_activated, *req_count > 3000);
                 }
                 inserir_transacao::flush_queue(app_state_async.clone()).await;

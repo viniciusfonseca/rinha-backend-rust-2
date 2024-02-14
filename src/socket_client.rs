@@ -1,16 +1,14 @@
 use anyhow::Error;
 use axum::response::IntoResponse;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Bytes;
-use hyper_util::client::legacy::Client;
-use hyperlocal::{UnixClientExt, UnixConnector, Uri};
+use http_body_util::BodyExt;
+use hyperlocal::Uri;
+
+use crate::HyperClient;
 
 const SOCKET_PATH_BASE: &'static str = "/tmp/sockets/api03.sock";
 
-pub async fn make_socket_request(path: String) -> String {
+async fn make_socket_request(client: &HyperClient, path: String) -> String {
     let url = Uri::new(SOCKET_PATH_BASE, &path).into();
-
-    let client: Client<UnixConnector, Full<Bytes>> = Client::unix();
 
     let mut response = client.get(url).await
         .expect("error getting socket response")
@@ -28,9 +26,9 @@ pub async fn make_socket_request(path: String) -> String {
     response_body
 }
 
-pub async fn consulta_saldo(id_cliente: i32) -> (i32, i32) {
+pub async fn consulta_saldo(client: &HyperClient, id_cliente: i32) -> (i32, i32) {
 
-    let response = make_socket_request(format!("/c/{id_cliente}")).await;
+    let response = make_socket_request(client, format!("/c/{id_cliente}")).await;
     let split = response.split(",").collect::<Vec<&str>>();
     (
         split.get(0).unwrap().parse::<i32>().unwrap(),
@@ -38,9 +36,9 @@ pub async fn consulta_saldo(id_cliente: i32) -> (i32, i32) {
     )
 }
 
-pub async fn movimenta_saldo(id_cliente: i32, valor: i32) -> Result<(i32, i32, i32), anyhow::Error> {
+pub async fn movimenta_saldo(client: &HyperClient, id_cliente: i32, valor: i32) -> Result<(i32, i32, i32), anyhow::Error> {
 
-    let response = make_socket_request(format!("/c/{id_cliente}/{valor}")).await;
+    let response = make_socket_request(client, format!("/c/{id_cliente}/{valor}")).await;
     let split = response.split(",").collect::<Vec<&str>>();
     
     if split.len() == 1 {

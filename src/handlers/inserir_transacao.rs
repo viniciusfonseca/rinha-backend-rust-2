@@ -50,7 +50,7 @@ pub async fn handler(
         let _ = std::mem::replace(&mut *req_count, new_req_count);
     }
 
-    match movimenta_saldo(id_cliente, valor).await {
+    match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
         Ok((saldo, limite, id_transacao)) =>
             if *app_state.batch_activated.lock().unwrap() {
                 app_state.queue.push((id_cliente, valor.abs(), payload.tipo, payload.descricao));

@@ -59,7 +59,7 @@ pub async fn handler(
         return (StatusCode::NOT_FOUND, String::new());
     }
     
-    let (saldo, limite) = consulta_saldo(id_cliente).await;
+    let (saldo, limite) = consulta_saldo(&app_state.socket_client, id_cliente).await;
     
     let conn = app_state.pg_pool.get().await
         .expect("error getting db conn");
