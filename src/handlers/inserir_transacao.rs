@@ -45,23 +45,25 @@ pub async fn handler(
     };
 
     {
-        app_state.traffic_observer.write().await.count += 1;
+        let mut req_count = app_state.req_count.lock().unwrap();
+        let new_req_count = *req_count + 1;
+        let _ = std::mem::replace(&mut *req_count, new_req_count);
     }
 
     match movimenta_saldo(id_cliente, valor).await {
-        Ok((saldo, limite)) =>
-            if app_state.traffic_observer.read().await.batch_activated {
-                app_state.queue.push((id_cliente, valor, payload.tipo, payload.descricao));
+        Ok((saldo, limite, id_transacao)) =>
+            if *app_state.batch_activated.lock().unwrap() {
+                app_state.queue.push((id_cliente, valor.abs(), payload.tipo, payload.descricao));
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }
             else {
                 let conn = app_state.pg_pool.get().await
                     .expect("error getting db conn");
                 let stmt = conn.prepare_cached("
-                    INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
-                    VALUES ($1, $2, $3, $4);
+                    INSERT INTO transacoes (id, id_cliente, valor, tipo, descricao)
+                    VALUES ($1, $2, $3, $4, $5);
                 ").await.expect("error preparing stmt (inserir_transacao)");
-                conn.execute(&stmt, &[&id_cliente, &valor, &payload.tipo, &payload.descricao]).await
+                conn.execute(&stmt, &[&id_transacao, &id_cliente, &valor.abs(), &payload.tipo, &payload.descricao]).await
                     .expect("error running insert");
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }

@@ -1,5 +1,5 @@
 CREATE UNLOGGED TABLE transacoes (
-	id SERIAL,
+	id INTEGER NOT NULL,
 	id_cliente INTEGER NOT NULL,
 	valor INTEGER NOT NULL,
 	tipo CHAR(1) NOT NULL,

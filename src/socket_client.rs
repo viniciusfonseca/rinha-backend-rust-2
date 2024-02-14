@@ -38,7 +38,7 @@ pub async fn consulta_saldo(id_cliente: i32) -> (i32, i32) {
     )
 }
 
-pub async fn movimenta_saldo(id_cliente: i32, valor: i32) -> Result<(i32, i32), anyhow::Error> {
+pub async fn movimenta_saldo(id_cliente: i32, valor: i32) -> Result<(i32, i32, i32), anyhow::Error> {
 
     let response = make_socket_request(format!("/c/{id_cliente}/{valor}")).await;
     let split = response.split(",").collect::<Vec<&str>>();
@@ -49,7 +49,8 @@ pub async fn movimenta_saldo(id_cliente: i32, valor: i32) -> Result<(i32, i32), 
     else {
         Ok((
             split.get(0).unwrap().parse::<i32>().unwrap(),
-            split.get(1).unwrap().parse::<i32>().unwrap()
+            split.get(1).unwrap().parse::<i32>().unwrap(),
+            split.get(2).unwrap().parse::<i32>().unwrap(),
         ))
     }
 }

@@ -3,20 +3,19 @@ use std::{env, sync::{Arc, Mutex}, time::Duration};
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
 use handlers::inserir_transacao;
-use tokio::sync::RwLock;
 use tokio_postgres::NoTls;
-use traffic_observer::TrafficObserver;
 
 mod handlers;
-mod traffic_observer;
 mod socket_client;
 
 struct AppState {
     pg_pool: deadpool_postgres::Pool,
-    traffic_observer: RwLock<TrafficObserver>,
     queue: AppQueue,
     saldos: Vec<Mutex<i32>>,
-    limites: Vec<i32>
+    limites: Vec<i32>,
+    id_transacao: Mutex<i32>,
+    req_count: Mutex<i32>,
+    batch_activated: Mutex<bool>
 }
 
 type QueueEvent = (i32, i32, String, String);
@@ -35,11 +34,6 @@ async fn main() {
     cfg.pool = deadpool_postgres::PoolConfig::new(pool_size).into();
     let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)
         .expect("error creating pg pool");
-
-    let traffic_observer = RwLock::new(TrafficObserver {
-        count: 0,
-        batch_activated: false
-    });
 
     let queue = AppQueue::new();
 
@@ -60,10 +54,12 @@ async fn main() {
 
     let app_state = Arc::new(AppState {
         pg_pool,
-        traffic_observer,
         queue,
         saldos,
-        limites
+        limites,
+        id_transacao: Mutex::new(0),
+        req_count: Mutex::new(0),
+        batch_activated: Mutex::new(false)
     });
 
     if !is_mem_server {
@@ -71,8 +67,9 @@ async fn main() {
         tokio::spawn(async move {
             loop {
                 {
-                    let mut traffic_observer = app_state_async.traffic_observer.write().await;
-                    traffic_observer.batch_activated = traffic_observer.count > 3000;
+                    let mut batch_activated = app_state_async.batch_activated.lock().unwrap();
+                    let mut req_count = app_state_async.req_count.lock().unwrap();
+                    let _ = std::mem::replace(&mut *batch_activated, *req_count > 3000);
                 }
                 inserir_transacao::flush_queue(app_state_async.clone()).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;

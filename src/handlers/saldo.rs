@@ -29,6 +29,12 @@ pub async fn movimento(
     }
     else {
         let _ = std::mem::replace(&mut *saldo, saldo_atualizado);
-        (StatusCode::OK, format!("{saldo_atualizado},{limite}"))
+        let id_transacao = {
+            let mut id_transacao = app_state.id_transacao.lock().unwrap();
+            let novo_id_transacao = *id_transacao + 1;
+            let _ = std::mem::replace(&mut *id_transacao, novo_id_transacao);
+            novo_id_transacao
+        };
+        (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
     }
 }
