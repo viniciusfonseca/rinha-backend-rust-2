@@ -77,43 +77,43 @@ async fn main() {
             loop {
                 {
                     let batch_activated = &app_state_async.batch_activated;
-                    let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::SeqCst);
-                    batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::SeqCst);
+                    let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::Acquire);
+                    batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::Relaxed);
                 }
-                inserir_transacao::flush_queue(app_state_async.clone()).await;
+                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
     }
     else {
-        let app_state_async = app_state.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(2)).await;
+        // let app_state_async = app_state.clone();
+        // tokio::spawn(async move {
+        //     tokio::time::sleep(Duration::from_secs(2)).await;
 
-            let mut t = Vec::new();
+        //     let mut t = Vec::new();
 
-            let http_client = reqwest::Client::new();
+        //     let http_client = reqwest::Client::new();
 
-            let mount_body = || {
-                format!("{{\"valor\":1,\"tipo\":\"d\",\"descricao\":\"VAF\"}}")
-            };
+        //     let mount_body = || {
+        //         format!("{{\"valor\":1,\"tipo\":\"d\",\"descricao\":\"VAF\"}}")
+        //     };
 
-            loop {
-                if !app_state_async.warming_up.load(std::sync::atomic::Ordering::SeqCst) { break; }
-                for _ in 0..75 {
-                    t.push(
-                        http_client.post("http://172.17.0.1:9999/clientes/1/transacoes")
-                            .header("User-Agent", "W")
-                            .body(mount_body())
-                            .send()
-                    );
-                }
-                futures::future::join_all(&mut t).await;
-                t.clear();
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
+        //     loop {
+        //         if !app_state_async.warming_up.load(std::sync::atomic::Ordering::SeqCst) { break; }
+        //         for _ in 0..75 {
+        //             t.push(
+        //                 http_client.post("http://172.17.0.1:9999/clientes/1/transacoes")
+        //                     .header("User-Agent", "W")
+        //                     .body(mount_body())
+        //                     .send()
+        //             );
+        //         }
+        //         futures::future::join_all(&mut t).await;
+        //         t.clear();
+        //         tokio::time::sleep(Duration::from_secs(2)).await;
+        //     }
 
-        });
+        // });
     }
 
     let app = Router::new()

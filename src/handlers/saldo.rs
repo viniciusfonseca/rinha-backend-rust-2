@@ -11,7 +11,7 @@ pub async fn consulta(
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
     let saldo = app_state.saldos
         .get(id_cliente - 1).unwrap()
-        .load(std::sync::atomic::Ordering::SeqCst);
+        .load(std::sync::atomic::Ordering::Relaxed);
     (StatusCode::OK, format!("{saldo},{limite}"))
 }
 
@@ -23,17 +23,12 @@ pub async fn movimento(
         return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
-    let saldo_atualizado = {
-        let saldo_atomic = app_state.saldos.get(id_cliente - 1).unwrap();
-        let saldo_atualizado = saldo_atomic.load(Ordering::SeqCst) + valor;
-        if saldo_atualizado < -limite {
-            return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
-        }
-        saldo_atomic.store(saldo_atualizado, Ordering::SeqCst);
-        saldo_atualizado
-    };
-    let id_transacao = {
-        app_state.id_transacao.fetch_add(1, Ordering::SeqCst) + 1
-    };
+    let saldo_atomic = app_state.saldos.get(id_cliente - 1).unwrap();
+    let saldo_atualizado = saldo_atomic.load(Ordering::Acquire) + valor;
+    if saldo_atualizado < -limite {
+        return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    }
+    saldo_atomic.store(saldo_atualizado, Ordering::Relaxed);
+    let id_transacao = app_state.id_transacao.fetch_add(1, Ordering::Relaxed) + 1;
     (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
 }

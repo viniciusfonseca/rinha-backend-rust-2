@@ -11,6 +11,7 @@ services:
     volumes:
       - postgres-storage:/var/run/postgresql
       - sockets:/tmp/sockets
+    network_mode: host
     deploy:
       resources:
         limits:
@@ -40,6 +41,7 @@ services:
     ports:
       - "9999:9999"
     privileged: true
+    network_mode: host
     deploy:
       resources:
         limits:
@@ -66,6 +68,7 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+    network_mode: host
     deploy:
       resources:
         limits:
@@ -75,8 +78,3 @@ services:
 volumes:
   sockets:
   postgres-storage:
-    
-networks:
-  default:
-    driver: bridge
-    name: rinha-nginx-2024q1

@@ -1,10 +1,11 @@
 use std::{env, sync::Arc};
+use deadpool_postgres::Pool;
 use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::{socket_client::movimenta_saldo, AppState};
+use crate::{socket_client::movimenta_saldo, AppQueue, AppState};
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -52,11 +53,10 @@ pub async fn handler(
             id_cliente = 0;
         }
         else {
-            app_state.warming_up.store(false, std::sync::atomic::Ordering::SeqCst);
+            app_state.warming_up.store(false, std::sync::atomic::Ordering::Relaxed);
+            app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
-
-    app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
         Ok((saldo, limite, id_transacao)) =>
@@ -80,9 +80,9 @@ pub async fn handler(
     }
 }
 
-pub async fn flush_queue(app_state: Arc<AppState>) {
+pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool) {
     let mut sql = String::new();
-    if app_state.queue.len() > 0 {
+    if queue.len() > 0 {
         let mut sql_builder = SqlBuilder::insert_into("transacoes");
         sql_builder
             .field("id")
@@ -91,8 +91,8 @@ pub async fn flush_queue(app_state: Arc<AppState>) {
             .field("tipo")
             .field("descricao")
             .field("p");
-        while app_state.queue.len() > 0 {
-            let (id_transacao, id_cliente, valor, tipo, descricao) = app_state.queue.pop().await;
+        while queue.len() > 0 {
+            let (id_transacao, id_cliente, valor, tipo, descricao) = queue.pop().await;
             sql_builder.values(&[
                 &id_transacao.to_string(),
                 &id_cliente.to_string(),
@@ -125,7 +125,7 @@ pub async fn flush_queue(app_state: Arc<AppState>) {
     }
     if sql.is_empty() { return; }
     {
-        let _ = match app_state.pg_pool.get().await {
+        let _ = match &pg_pool.get().await {
             Ok(conn) => 
                 match conn.batch_execute(&sql).await {
                     Ok(_) => Ok(()),
