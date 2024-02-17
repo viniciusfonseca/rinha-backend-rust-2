@@ -40,7 +40,6 @@ services:
       - api02
     ports:
       - "9999:9999"
-    privileged: true
     network_mode: host
     deploy:
       resources:
