@@ -1,3 +1,4 @@
+use core::slice::SlicePattern;
 use std::{sync::Arc, time::SystemTime};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
@@ -8,20 +9,20 @@ use tokio_postgres::Row;
 use crate::{socket_client::consulta_saldo, AppState};
 
 #[derive(Serialize)]
-struct ExtratoDTO {
+pub struct ExtratoDTO {
     pub saldo: ExtratoSaldoDTO,
     pub ultimas_transacoes: Vec<ExtratoTransacaoDTO>
 }
 
 #[derive(Serialize)]
-struct ExtratoSaldoDTO {
+pub struct ExtratoSaldoDTO {
     pub total: i32,
     pub data_extrato: String,
     pub limite: i32,
 }
 
 #[derive(Serialize)]
-struct ExtratoTransacaoDTO {
+pub struct ExtratoTransacaoDTO {
     pub valor: i32,
     pub tipo: String,
     pub descricao: String,
@@ -48,6 +49,35 @@ impl ExtratoDTO {
             }).collect()
         }
     }
+
+    pub fn with_systemtime_now(me: &ExtratoDTO) -> ExtratoDTO {
+        ExtratoDTO {
+            saldo: ExtratoSaldoDTO {
+                total: me.saldo.total,
+                data_extrato: parse_sys_time_as_string(SystemTime::now()),
+                limite: me.saldo.limite
+            },
+            ultimas_transacoes: me.ultimas_transacoes
+        }
+    }
+}
+
+impl ExtratoDTO {
+    fn copy(me: ExtratoDTO) -> ExtratoDTO {
+        ExtratoDTO {
+            saldo: ExtratoSaldoDTO {
+                total: me.saldo.total,
+                data_extrato: String::from(me.saldo.data_extrato),
+                limite: me.saldo.limite
+            },
+            ultimas_transacoes: me.ultimas_transacoes.iter().map(|t| ExtratoTransacaoDTO {
+                valor: t.valor,
+                tipo: String::from(t.tipo),
+                descricao: String::from(t.descricao),
+                realizada_em: String::from(t.realizada_em)
+            }).collect()
+        }
+    }
 }
 
 pub async fn handler(
@@ -59,8 +89,18 @@ pub async fn handler(
         return (StatusCode::NOT_FOUND, String::new());
     }
     
-    let (saldo, limite) = consulta_saldo(&app_state.socket_client, id_cliente).await;
-    
+    let (saldo, limite, ultima_versao_extrato) = consulta_saldo(&app_state.socket_client, id_cliente).await;
+
+    let versao_extrato = app_state.versao_extrato.load(std::sync::atomic::Ordering::Acquire);
+    if versao_extrato == ultima_versao_extrato {
+        match &app_state.extrato_cache {
+            Some(corpo) => {
+                return (StatusCode::OK, serde_json::to_string(&ExtratoDTO::with_systemtime_now(corpo)).unwrap());
+            },
+            None => ()
+        }
+    }
+
     let conn = app_state.pg_pool.get().await
         .expect("error getting db conn");
 
@@ -69,6 +109,11 @@ pub async fn handler(
     let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
         .expect("error querying transactions");
 
+    app_state.versao_extrato.store(ultima_versao_extrato, std::sync::atomic::Ordering::Relaxed);
 
-    (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
+    let extrato_ok = ExtratoDTO::from(saldo, limite, extrato);
+    let extrato_json = ExtratoDTO::copy(extrato_ok);
+    app_state.extrato_cache = Some(extrato_ok);
+
+    (StatusCode::OK, serde_json::to_string(&extrato_json).unwrap())
 }

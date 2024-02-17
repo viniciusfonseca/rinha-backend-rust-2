@@ -12,8 +12,11 @@ pub async fn consulta(
     let saldo = app_state.saldos
         .get(id_cliente - 1).unwrap()
         .load(std::sync::atomic::Ordering::Relaxed);
-    (StatusCode::OK, format!("{saldo},{limite}"))
-}
+    let ultima_versao_extrato = app_state.ultima_insercao_em
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    (StatusCode::OK, format!("{saldo},{limite},{ultima_versao_extrato}"))
+} 
 
 pub async fn movimento(
     Path((id_cliente, valor)): Path<(usize, i32)>,

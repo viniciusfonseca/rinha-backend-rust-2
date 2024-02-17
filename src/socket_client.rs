@@ -26,13 +26,14 @@ async fn make_socket_request(client: &HyperClient, path: String) -> String {
     response_body
 }
 
-pub async fn consulta_saldo(client: &HyperClient, id_cliente: i32) -> (i32, i32) {
+pub async fn consulta_saldo(client: &HyperClient, id_cliente: i32) -> (i32, i32, i32) {
 
     let response = make_socket_request(client, format!("/c/{id_cliente}")).await;
     let split = response.split(",").collect::<Vec<&str>>();
     (
         split.get(0).unwrap().parse::<i32>().unwrap(),
-        split.get(1).unwrap().parse::<i32>().unwrap()
+        split.get(1).unwrap().parse::<i32>().unwrap(),
+        split.get(2).unwrap().parse::<i32>().unwrap()
     )
 }
 

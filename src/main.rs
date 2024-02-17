@@ -2,7 +2,7 @@ use std::{env, sync::{atomic::{AtomicBool, AtomicI32}, Arc}, time::Duration};
 
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
-use handlers::inserir_transacao;
+use handlers::{extrato::ExtratoDTO, inserir_transacao};
 use http_body_util::Full;
 use hyperlocal::{UnixClientExt, UnixConnector};
 use tokio_postgres::NoTls;
@@ -16,6 +16,9 @@ struct AppState {
     saldos: Vec<AtomicI32>,
     limites: Vec<i32>,
     id_transacao: AtomicI32,
+    ultima_versao_extrato: AtomicI32,
+    versao_extrato: AtomicI32,
+    extrato_cache: Option<ExtratoDTO>,
     req_count: AtomicI32,
     batch_activated: AtomicBool,
     socket_client: HyperClient,
@@ -65,6 +68,9 @@ async fn main() {
         saldos,
         limites,
         id_transacao: AtomicI32::new(0),
+        ultima_versao_extrato: AtomicI32::new(1),
+        versao_extrato: AtomicI32::new(1),
+        extrato_cache: None,
         req_count: AtomicI32::new(0),
         batch_activated: AtomicBool::new(false),
         socket_client,
@@ -80,7 +86,7 @@ async fn main() {
                     let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::Acquire);
                     batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::Relaxed);
                 }
-                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool).await;
+                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool, &app_state_async.ultima_versao_extrato).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
