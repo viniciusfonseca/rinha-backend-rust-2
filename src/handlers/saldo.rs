@@ -11,9 +11,9 @@ pub async fn consulta(
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
     let saldo = app_state.saldos
         .get(id_cliente - 1).unwrap()
-        .load(std::sync::atomic::Ordering::Relaxed);
-    let ultima_versao_extrato = app_state.ultima_insercao_em
-        .load(std::sync::atomic::Ordering::Relaxed);
+        .load(Ordering::Relaxed);
+    let ultima_versao_extrato = app_state.ultima_versao_extrato
+        .load(Ordering::Acquire);
 
     (StatusCode::OK, format!("{saldo},{limite},{ultima_versao_extrato}"))
 } 
@@ -35,3 +35,10 @@ pub async fn movimento(
     let id_transacao = app_state.id_transacao.fetch_add(1, Ordering::Relaxed) + 1;
     (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
 }
+
+pub async fn nova_versao(
+    State(app_state): State<Arc<AppState>>
+) -> impl IntoResponse {
+    app_state.ultima_versao_extrato.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    StatusCode::OK
+} 

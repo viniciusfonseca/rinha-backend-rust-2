@@ -1,11 +1,11 @@
-use std::{env, sync::{atomic::AtomicI32, Arc}};
+use std::{env, sync::Arc};
 use deadpool_postgres::Pool;
 use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::{socket_client::movimenta_saldo, AppQueue, AppState};
+use crate::{socket_client::{atualiza_extrato, movimenta_saldo}, AppQueue, AppState, HyperClient};
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -74,7 +74,7 @@ pub async fn handler(
                 conn.execute(&stmt, &[&id_transacao, &id_cliente, &valor.abs(), &payload.tipo, &payload.descricao]).await
                     .expect("error running insert");
 
-                app_state.ultima_versao_extrato.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                atualiza_extrato(&app_state.socket_client).await;
 
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }
@@ -83,7 +83,7 @@ pub async fn handler(
     }
 }
 
-pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool, ultima_versao_extrato: &AtomicI32) {
+pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool, socket_client: &HyperClient) {
     let mut sql = String::new();
     if queue.len() > 0 {
         let mut sql_builder = SqlBuilder::insert_into("transacoes");
@@ -132,7 +132,7 @@ pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool, ultima_versao_extrato
             Ok(conn) => 
                 match conn.batch_execute(&sql).await {
                     Ok(_) => {
-                        ultima_versao_extrato.fetch_add(1, std::sync::atomic::Ordering::Relaxed); 
+                        atualiza_extrato(socket_client).await;
                         Ok(())
                     },
                     Err(e) => { eprintln!("error running batch: {e}"); Err(e) },

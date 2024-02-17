@@ -1,4 +1,3 @@
-use core::slice::SlicePattern;
 use std::{sync::Arc, time::SystemTime};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
@@ -50,7 +49,7 @@ impl ExtratoDTO {
         }
     }
 
-    pub fn with_systemtime_now(me: &ExtratoDTO) -> ExtratoDTO {
+    pub fn with_systemtime_now(me: ExtratoDTO) -> ExtratoDTO {
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
                 total: me.saldo.total,
@@ -62,19 +61,19 @@ impl ExtratoDTO {
     }
 }
 
-impl ExtratoDTO {
-    fn copy(me: ExtratoDTO) -> ExtratoDTO {
+impl Clone for ExtratoDTO {
+    fn clone(&self) -> ExtratoDTO {
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
-                total: me.saldo.total,
-                data_extrato: String::from(me.saldo.data_extrato),
-                limite: me.saldo.limite
+                total: self.saldo.total,
+                data_extrato: self.saldo.data_extrato.clone(),
+                limite: self.saldo.limite
             },
-            ultimas_transacoes: me.ultimas_transacoes.iter().map(|t| ExtratoTransacaoDTO {
+            ultimas_transacoes: self.ultimas_transacoes.iter().map(|t| ExtratoTransacaoDTO {
                 valor: t.valor,
-                tipo: String::from(t.tipo),
-                descricao: String::from(t.descricao),
-                realizada_em: String::from(t.realizada_em)
+                tipo: t.tipo.clone(),
+                descricao: t.descricao.clone(),
+                realizada_em: t.realizada_em.clone()
             }).collect()
         }
     }
@@ -93,11 +92,16 @@ pub async fn handler(
 
     let versao_extrato = app_state.versao_extrato.load(std::sync::atomic::Ordering::Acquire);
     if versao_extrato == ultima_versao_extrato {
-        match &app_state.extrato_cache {
-            Some(corpo) => {
-                return (StatusCode::OK, serde_json::to_string(&ExtratoDTO::with_systemtime_now(corpo)).unwrap());
-            },
-            None => ()
+        match app_state.extrato_cache.lock() {
+            Ok(guard) => { match (*guard).clone() {
+                Some(corpo) => {
+                    return (StatusCode::OK, serde_json::to_string(&ExtratoDTO::with_systemtime_now(corpo)).unwrap());
+                },
+                None => ()
+            }},
+            Err(faulty_guard) => {
+                drop(faulty_guard);
+            }
         }
     }
 
@@ -112,8 +116,8 @@ pub async fn handler(
     app_state.versao_extrato.store(ultima_versao_extrato, std::sync::atomic::Ordering::Relaxed);
 
     let extrato_ok = ExtratoDTO::from(saldo, limite, extrato);
-    let extrato_json = ExtratoDTO::copy(extrato_ok);
-    app_state.extrato_cache = Some(extrato_ok);
+    let extrato_json = extrato_ok.clone();
+    *app_state.extrato_cache.lock().unwrap() = Some(extrato_ok);
 
     (StatusCode::OK, serde_json::to_string(&extrato_json).unwrap())
 }

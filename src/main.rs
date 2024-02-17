@@ -1,4 +1,4 @@
-use std::{env, sync::{atomic::{AtomicBool, AtomicI32}, Arc}, time::Duration};
+use std::{env, sync::{atomic::{AtomicBool, AtomicI32}, Arc, Mutex}, time::Duration};
 
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
@@ -18,7 +18,7 @@ struct AppState {
     id_transacao: AtomicI32,
     ultima_versao_extrato: AtomicI32,
     versao_extrato: AtomicI32,
-    extrato_cache: Option<ExtratoDTO>,
+    extrato_cache: Mutex<Option<ExtratoDTO>>,
     req_count: AtomicI32,
     batch_activated: AtomicBool,
     socket_client: HyperClient,
@@ -70,7 +70,7 @@ async fn main() {
         id_transacao: AtomicI32::new(0),
         ultima_versao_extrato: AtomicI32::new(1),
         versao_extrato: AtomicI32::new(1),
-        extrato_cache: None,
+        extrato_cache: Mutex::new(None.into()),
         req_count: AtomicI32::new(0),
         batch_activated: AtomicBool::new(false),
         socket_client,
@@ -86,7 +86,7 @@ async fn main() {
                     let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::Acquire);
                     batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::Relaxed);
                 }
-                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool, &app_state_async.ultima_versao_extrato).await;
+                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool, &app_state_async.socket_client).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
@@ -127,6 +127,7 @@ async fn main() {
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
         .route("/c/:i", get(handlers::saldo::consulta))
         .route("/c/:i/:v", get(handlers::saldo::movimento))
+        .route("/e", get(handlers::saldo::nova_versao))
         .with_state::<()>(app_state);
 
     let hostname = env::var("HOSTNAME").unwrap();

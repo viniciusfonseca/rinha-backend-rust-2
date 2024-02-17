@@ -53,3 +53,7 @@ pub async fn movimenta_saldo(client: &HyperClient, id_cliente: i32, valor: i32) 
         ))
     }
 }
+
+pub async fn atualiza_extrato(client: &HyperClient) {
+    make_socket_request(client, "/e".to_string()).await;
+}
