@@ -1,4 +1,4 @@
-use std::{env, sync::Arc};
+use std::{env, sync::{atomic::Ordering, Arc}};
 use deadpool_postgres::Pool;
 use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
@@ -53,14 +53,13 @@ pub async fn handler(
             id_cliente = 0;
         }
         else {
-            app_state.warming_up.store(false, std::sync::atomic::Ordering::Relaxed);
-            app_state.req_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            app_state.req_count.fetch_add(1, Ordering::Relaxed);
         }
     }
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
         Ok((saldo, limite, id_transacao)) =>
-            if app_state.batch_activated.load(std::sync::atomic::Ordering::Relaxed) {
+            if app_state.batch_activated.load(Ordering::Relaxed) {
                 app_state.queue.push((id_transacao, id_cliente, valor.abs(), payload.tipo, payload.descricao));
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }

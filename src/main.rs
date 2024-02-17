@@ -1,4 +1,4 @@
-use std::{env, sync::{atomic::{AtomicBool, AtomicI32}, Arc}, time::Duration};
+use std::{env, sync::{atomic::{AtomicBool, AtomicI32, Ordering}, Arc}, time::Duration};
 
 use axum::{routing::{get, post}, Router};
 use deadpool::Runtime;
@@ -18,8 +18,7 @@ struct AppState {
     id_transacao: AtomicI32,
     req_count: AtomicI32,
     batch_activated: AtomicBool,
-    socket_client: HyperClient,
-    warming_up: AtomicBool
+    socket_client: HyperClient
 }
 
 type QueueEvent = (i32, i32, i32, String, String);
@@ -67,8 +66,7 @@ async fn main() {
         id_transacao: AtomicI32::new(0),
         req_count: AtomicI32::new(0),
         batch_activated: AtomicBool::new(false),
-        socket_client,
-        warming_up: AtomicBool::new(true)
+        socket_client
     });
 
     if !is_mem_server {
@@ -77,43 +75,13 @@ async fn main() {
             loop {
                 {
                     let batch_activated = &app_state_async.batch_activated;
-                    let req_count = app_state_async.req_count.load(std::sync::atomic::Ordering::Acquire);
-                    batch_activated.store(req_count > 3000, std::sync::atomic::Ordering::Relaxed);
+                    let req_count = app_state_async.req_count.load(Ordering::Relaxed);
+                    batch_activated.store(req_count > 3000, Ordering::Release);
                 }
                 inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool).await;
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
-    }
-    else {
-        // let app_state_async = app_state.clone();
-        // tokio::spawn(async move {
-        //     tokio::time::sleep(Duration::from_secs(2)).await;
-
-        //     let mut t = Vec::new();
-
-        //     let http_client = reqwest::Client::new();
-
-        //     let mount_body = || {
-        //         format!("{{\"valor\":1,\"tipo\":\"d\",\"descricao\":\"VAF\"}}")
-        //     };
-
-        //     loop {
-        //         if !app_state_async.warming_up.load(std::sync::atomic::Ordering::SeqCst) { break; }
-        //         for _ in 0..75 {
-        //             t.push(
-        //                 http_client.post("http://172.17.0.1:9999/clientes/1/transacoes")
-        //                     .header("User-Agent", "W")
-        //                     .body(mount_body())
-        //                     .send()
-        //             );
-        //         }
-        //         futures::future::join_all(&mut t).await;
-        //         t.clear();
-        //         tokio::time::sleep(Duration::from_secs(2)).await;
-        //     }
-
-        // });
     }
 
     let app = Router::new()
