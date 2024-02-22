@@ -58,9 +58,9 @@ pub async fn handler(
     }
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
-        Ok((saldo, limite, id_transacao)) =>
+        Ok((saldo, limite, id_transacao, realizada_em)) =>
             if app_state.batch_activated.load(Ordering::Relaxed) {
-                app_state.queue.push((id_transacao, id_cliente, valor.abs(), payload.tipo, payload.descricao));
+                app_state.queue.push((id_transacao, id_cliente, valor.abs(), payload.tipo, payload.descricao, realizada_em));
                 (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
             }
             else {
@@ -89,15 +89,17 @@ pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool) {
             .field("valor")
             .field("tipo")
             .field("descricao")
+            .field("realizada_em")
             .field("p");
         while queue.len() > 0 {
-            let (id_transacao, id_cliente, valor, tipo, descricao) = queue.pop().await;
+            let (id_transacao, id_cliente, valor, tipo, descricao, realizada_em) = queue.pop().await;
             sql_builder.values(&[
                 &id_transacao.to_string(),
                 &id_cliente.to_string(),
                 &valor.to_string(),
                 &quote(tipo),
                 &quote(descricao),
+                &quote(realizada_em),
                 &0.to_string()
             ]);
         }
@@ -105,21 +107,7 @@ pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool) {
     }
     if env::var("UPDATER").is_ok() {
         sql.push_str("
-            WITH transacoes_processadas AS (
-                UPDATE transacoes
-                SET p = 1
-                WHERE p = 0 
-                RETURNING id_cliente, valor, tipo
-            ),
-            saldos_pendentes AS (
-                SELECT SUM(CASE WHEN tipo = 'd' THEN -valor ELSE valor END) AS valor, id_cliente
-                FROM transacoes_processadas
-                GROUP BY id_cliente
-            )
-            UPDATE saldos_limites sl
-            SET saldo = saldo + saldos_pendentes.valor
-            FROM saldos_pendentes
-            WHERE sl.id_cliente = saldos_pendentes.id_cliente;
+            
         ");
     }
     if sql.is_empty() { return; }

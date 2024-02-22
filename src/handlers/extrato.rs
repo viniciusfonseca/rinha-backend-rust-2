@@ -28,7 +28,7 @@ struct ExtratoTransacaoDTO {
     pub realizada_em: String
 }
 
-fn parse_sys_time_as_string(system_time: SystemTime) -> String {
+pub fn parse_sys_time_as_string(system_time: SystemTime) -> String {
     DateTime::<Utc>::from(system_time).format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 

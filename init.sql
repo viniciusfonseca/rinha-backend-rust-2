@@ -47,21 +47,14 @@ BEGIN
 END;
 $$;
 
-CREATE PROCEDURE MOVIMENTAR_SALDO(
-	p_id_cliente INTEGER,
-	p_valor INTEGER,
-	INOUT v_saldo_atualizado INTEGER DEFAULT NULL,
-	INOUT v_limite INTEGER DEFAULT NULL
-)
+CREATE PROCEDURE MOVIMENTAR_SALDOS()
 LANGUAGE plpgsql
 AS $$
 BEGIN
-	UPDATE saldos_limites
-	SET saldo = saldo + p_valor
-	WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
-	RETURNING saldo, limite INTO v_saldo_atualizado, v_limite;
+	SELECT * FROM transacoes WHERE p = 0 FOR UPDATE;
+	
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
 DO $$
 BEGIN

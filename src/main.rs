@@ -21,7 +21,7 @@ struct AppState {
     socket_client: HyperClient
 }
 
-type QueueEvent = (i32, i32, i32, String, String);
+type QueueEvent = (i32, i32, i32, String, String, String);
 pub type AppQueue = deadqueue::unlimited::Queue<QueueEvent>;
 type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
 

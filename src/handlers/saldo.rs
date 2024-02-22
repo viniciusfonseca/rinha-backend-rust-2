@@ -1,8 +1,10 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::{sync::{atomic::Ordering, Arc}, time::SystemTime};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 
 use crate::AppState;
+
+use super::extrato::parse_sys_time_as_string;
 
 pub async fn consulta(
     Path(id_cliente): Path<usize>,
@@ -29,6 +31,7 @@ pub async fn movimento(
         return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
     saldo_atomic.store(saldo_atualizado, Ordering::Release);
+    let realizada_em = parse_sys_time_as_string(SystemTime::now());
     let id_transacao = app_state.id_transacao.fetch_add(1, Ordering::Relaxed) + 1;
-    (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao}"))
+    (StatusCode::OK, format!("{saldo_atualizado},{limite},{id_transacao},{realizada_em}"))
 }
