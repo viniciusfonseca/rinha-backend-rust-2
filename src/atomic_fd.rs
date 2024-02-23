@@ -1,4 +1,4 @@
-use tokio::{fs::File, io::{AsyncReadExt, AsyncSeekExt}};
+use tokio::{fs::{File, OpenOptions}, io::{AsyncReadExt, AsyncSeekExt}};
 
 // {tx_id},{updated_value},{datetime_rfc3339},{tipo},{descricao}
 pub type AtomicLog = (i32, i32, String, String, String);
@@ -11,8 +11,16 @@ pub struct AtomicFd {
 impl AtomicFd {
     pub async fn new(id: usize, log_size: usize) -> AtomicFd {
         AtomicFd {
-            value: File::open(format!("/tmp/{id}.a")).await.unwrap(),
-            logs: File::open(format!("/tmp/{id}.log")).await.unwrap(),
+            value: OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(false)
+                .open(format!("/tmp/{id}.a")).await.unwrap(),
+            logs: OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(false)
+                .open(format!("/tmp/{id}.a")).await.unwrap(),
             log_size
         }
     }
