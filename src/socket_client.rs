@@ -1,16 +1,16 @@
 use anyhow::Error;
-use axum::response::IntoResponse;
-use http_body_util::BodyExt;
-use hyperlocal::Uri;
+use axum::{body::Bytes, response::IntoResponse};
+use http_body_util::{BodyExt, Full};
+use hyper::Request;
+use serde_json::json;
 
 use crate::HyperClient;
 
-const SOCKET_PATH_BASE: &'static str = "/tmp/sockets/api03.sock";
+const SOCKET_PATH_BASE: &'static str = "/tmp/sockets/alexdb.sock";
 
-async fn make_socket_request(client: &HyperClient, path: String) -> String {
-    let url = Uri::new(SOCKET_PATH_BASE, &path).into();
+async fn make_socket_request(client: &HyperClient, request: Request<Full<Bytes>>) -> String {
 
-    let mut response = client.get(url).await
+    let mut response = client.request(request).await
         .expect("error getting socket response")
         .into_response();
 
@@ -26,19 +26,42 @@ async fn make_socket_request(client: &HyperClient, path: String) -> String {
     response_body
 }
 
-pub async fn consulta_saldo(client: &HyperClient, id_cliente: i32) -> (i32, i32) {
+pub async fn create_atomic(client: &HyperClient, id_cliente: usize, limite: i32, log_size: usize) {
 
-    let response = make_socket_request(client, format!("/c/{id_cliente}")).await;
-    let split = response.split(",").collect::<Vec<&str>>();
-    (
-        split.get(0).unwrap().parse::<i32>().unwrap(),
-        split.get(1).unwrap().parse::<i32>().unwrap()
-    )
+    let body = json!({
+        "id": id_cliente,
+        "min_value": -limite,
+        "log_size": log_size
+    });
+    let body = serde_json::to_string(&body).unwrap();
+    let body = Full::new(Bytes::from(body));
+
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("{SOCKET_PATH_BASE}/atomics"))
+        .body(body)
+        .expect("error building request (create_atomic)");
+
+    make_socket_request(client, request);
 }
 
-pub async fn movimenta_saldo(client: &HyperClient, id_cliente: i32, valor: i32) -> Result<(i32, i32, i32, String), anyhow::Error> {
+pub async fn movimenta_saldo(
+    client: &HyperClient,
+    id_cliente: i32,
+    valor: i32,
+    tipo: String,
+    descricao: String
+) -> Result<(i32, i32), anyhow::Error> {
 
-    let response = make_socket_request(client, format!("/c/{id_cliente}/{valor}")).await;
+    let body = format!("{tipo},{descricao}");
+    let body = Full::new(Bytes::from(body));
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("{SOCKET_PATH_BASE}/atomics/{id_cliente}/{valor}"))
+        .body(body)
+        .expect("error building request (movimenta_saldo)");
+
+    let response = make_socket_request(client, request).await;
     let split = response.split(",").collect::<Vec<&str>>();
     
     if split.len() == 1 {
@@ -48,8 +71,6 @@ pub async fn movimenta_saldo(client: &HyperClient, id_cliente: i32, valor: i32) 
         Ok((
             split.get(0).unwrap().parse::<i32>().unwrap(),
             split.get(1).unwrap().parse::<i32>().unwrap(),
-            split.get(2).unwrap().parse::<i32>().unwrap(),
-            split.get(2).unwrap().to_string(),
         ))
     }
 }

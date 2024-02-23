@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio_postgres::Row;
 
-use crate::{socket_client::consulta_saldo, AppState};
+use crate::AppState;
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -51,24 +51,21 @@ impl ExtratoDTO {
 }
 
 pub async fn handler(
-    Path(id_cliente): Path<i32>,
+    Path(id_cliente): Path<usize>,
     State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
 
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
-    
-    let (saldo, limite) = consulta_saldo(&app_state.socket_client, id_cliente).await;
-    
-    let conn = app_state.pg_pool.get().await
-        .expect("error getting db conn");
 
-    let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = $1 ORDER BY id DESC LIMIT 10;").await.expect("error preparing stmt (transactions)");
+    let saldo = app_state.atomic_fd.get_mut(&id_cliente).unwrap().get_value().await;
+    let limite = *app_state.limites.get(id_cliente).unwrap();
 
+    
+    
     let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
         .expect("error querying transactions");
-
 
     (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
 }

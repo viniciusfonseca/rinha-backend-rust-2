@@ -9,8 +9,8 @@ services:
     depends_on:
       - db
     volumes:
-      - postgres-storage:/var/run/postgresql
       - sockets:/tmp/sockets
+      - alexdb-storage:/tmp
     network_mode: host
     deploy:
       resources:
@@ -22,13 +22,13 @@ services:
     <<: *api
     hostname: api02
     environment:
-      UPDATER: 1
+      PRIMARY: 1
 
-  api03:
-    <<: *api
-    hostname: api03
+  alexdb:
+    build: ../alexdb
     environment:
-      MEM_SERVER: 1
+      SOCKET_PATH: /tmp/sockets/alexdb.sock
+      DATA_PATH: /tmp
   
   nginx:
     image: nginx:latest
@@ -47,33 +47,6 @@ services:
           cpus: "0.2"
           memory: "50MB"
 
-  db:
-    image: postgres:latest
-    hostname: db
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: rinhadb
-    ports:
-      - "5432:5432"
-    volumes:
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-      - ./postgres.conf:/docker-entrypoint-initdb.d/postgres.conf
-      - postgres-storage:/var/run/postgresql
-    command: postgres -c config_file=/docker-entrypoint-initdb.d/postgres.conf
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-    network_mode: host
-    deploy:
-      resources:
-        limits:
-          cpus: "0.65"
-          memory: "350MB"
-
 volumes:
   sockets:
-  postgres-storage:
+  alexdb-storage:

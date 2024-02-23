@@ -1,24 +1,19 @@
-use std::{env, sync::{atomic::{AtomicBool, AtomicI32, Ordering}, Arc}, time::Duration};
+use std::{collections::HashMap, env, sync::Arc};
 
+use atomic_fd::AtomicFd;
 use axum::{routing::{get, post}, Router};
-use deadpool::Runtime;
-use handlers::inserir_transacao;
 use http_body_util::Full;
 use hyperlocal::{UnixClientExt, UnixConnector};
-use tokio_postgres::NoTls;
+use socket_client::create_atomic;
 
 mod handlers;
 mod socket_client;
+mod atomic_fd;
 
 struct AppState {
-    pg_pool: deadpool_postgres::Pool,
-    queue: AppQueue,
-    saldos: Vec<AtomicI32>,
-    limites: Vec<i32>,
-    id_transacao: AtomicI32,
-    req_count: AtomicI32,
-    batch_activated: AtomicBool,
-    socket_client: HyperClient
+    socket_client: HyperClient,
+    atomic_fd: HashMap<usize, AtomicFd>,
+    limites: Vec<i32>
 }
 
 type QueueEvent = (i32, i32, i32, String, String, String);
@@ -28,67 +23,27 @@ type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper:
 #[tokio::main]
 async fn main() {
 
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.host = Some("/var/run/postgresql".to_string());
-    cfg.port = Some(5432);
-    cfg.dbname = Some("rinhadb".to_string());
-    cfg.user = Some("root".to_string());
-    cfg.password = Some("1234".to_string());
-    let pool_size = 125;
-    cfg.pool = deadpool_postgres::PoolConfig::new(pool_size).into();
-    let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("error creating pg pool");
-
-    let queue = AppQueue::new();
-
-    let mut saldos = Vec::new();
-    let mut limites = Vec::new();
-
-    let is_mem_server = std::env::var("MEM_SERVER").is_ok();
-    if is_mem_server {
-        for _ in 1..6 {
-            saldos.push(AtomicI32::new(0));
-        }
-        limites.push(1000 * 100);
-        limites.push(800 * 100);
-        limites.push(10000 * 100);
-        limites.push(100000 * 100);
-        limites.push(5000 * 100);
-    }
-
     let socket_client = HyperClient::unix();
+    let mut atomic_fd = HashMap::new();
+    let limites = vec![100000, 80000, 1000000, 10000000, 500000];
+    let log_size = 128;
+
+    for (i, limite) in limites.iter().enumerate() {
+        if env::var("PRIMARY").is_ok() {
+            _ = create_atomic(&socket_client, i, *limite, log_size);
+        }
+        atomic_fd.insert(i, AtomicFd::new(i, log_size).await);
+    }
 
     let app_state = Arc::new(AppState {
-        pg_pool,
-        queue,
-        saldos,
-        limites,
-        id_transacao: AtomicI32::new(0),
-        req_count: AtomicI32::new(0),
-        batch_activated: AtomicBool::new(false),
-        socket_client
+        socket_client,
+        atomic_fd,
+        limites
     });
-
-    if !is_mem_server {
-        let app_state_async = app_state.clone();
-        tokio::spawn(async move {
-            loop {
-                {
-                    let batch_activated = &app_state_async.batch_activated;
-                    let req_count = app_state_async.req_count.load(Ordering::Relaxed);
-                    batch_activated.store(req_count > 3000, Ordering::Release);
-                }
-                inserir_transacao::flush_queue(&app_state_async.queue, &app_state_async.pg_pool).await;
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
-    }
 
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
-        .route("/c/:i", get(handlers::saldo::consulta))
-        .route("/c/:i/:v", get(handlers::saldo::movimento))
         .with_state::<()>(app_state);
 
     let hostname = env::var("HOSTNAME").unwrap();

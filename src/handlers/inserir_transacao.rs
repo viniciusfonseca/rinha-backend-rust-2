@@ -1,6 +1,5 @@
-use std::{env, sync::{atomic::Ordering, Arc}};
+use std::{env, sync::Arc};
 use deadpool_postgres::Pool;
-use hyper::HeaderMap;
 use sql_builder::{quote, SqlBuilder};
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
@@ -22,9 +21,8 @@ struct TransacaoResultDTO {
 
 #[axum::debug_handler]
 pub async fn handler(
-    Path(mut id_cliente): Path<i32>,
+    Path(id_cliente): Path<i32>,
     State(app_state): State<Arc<AppState>>,
-    headers: HeaderMap,
     payload: Bytes,
 ) -> impl IntoResponse {
 
@@ -48,77 +46,9 @@ pub async fn handler(
         _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
 
-    if let Some(user_agent) = headers.get("user-agent") {
-        if user_agent.to_str().unwrap().eq("W") {
-            id_cliente = 0;
-        }
-        else {
-            app_state.req_count.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    match movimenta_saldo(&app_state.socket_client, id_cliente, valor).await {
-        Ok((saldo, limite, id_transacao, realizada_em)) =>
-            if app_state.batch_activated.load(Ordering::Relaxed) {
-                app_state.queue.push((id_transacao, id_cliente, valor.abs(), payload.tipo, payload.descricao, realizada_em));
-                (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
-            }
-            else {
-                let conn = app_state.pg_pool.get().await
-                    .expect("error getting db conn");
-                let stmt = conn.prepare_cached("
-                    INSERT INTO transacoes (id, id_cliente, valor, tipo, descricao, p)
-                    VALUES ($1, $2, $3, $4, $5, 1);
-                ").await.expect("error preparing stmt (inserir_transacao)");
-                conn.execute(&stmt, &[&id_transacao, &id_cliente, &valor.abs(), &payload.tipo, &payload.descricao]).await
-                    .expect("error running insert");
-                (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO { saldo, limite }).unwrap())
-            }
-        ,
+    match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
+        Ok((saldo_atualizado, limite)) =>
+            (StatusCode::OK, format!("{saldo_atualizado},{limite}")),
         Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
-    }
-}
-
-pub async fn flush_queue(queue: &AppQueue, pg_pool: &Pool) {
-    let mut sql = String::new();
-    if queue.len() > 0 {
-        let mut sql_builder = SqlBuilder::insert_into("transacoes");
-        sql_builder
-            .field("id")
-            .field("id_cliente")
-            .field("valor")
-            .field("tipo")
-            .field("descricao")
-            .field("realizada_em")
-            .field("p");
-        while queue.len() > 0 {
-            let (id_transacao, id_cliente, valor, tipo, descricao, realizada_em) = queue.pop().await;
-            sql_builder.values(&[
-                &id_transacao.to_string(),
-                &id_cliente.to_string(),
-                &valor.to_string(),
-                &quote(tipo),
-                &quote(descricao),
-                &quote(realizada_em),
-                &0.to_string()
-            ]);
-        }
-        sql.push_str(&sql_builder.sql().unwrap());
-    }
-    if env::var("UPDATER").is_ok() {
-        sql.push_str("
-            
-        ");
-    }
-    if sql.is_empty() { return; }
-    {
-        let _ = match &pg_pool.get().await {
-            Ok(conn) => 
-                match conn.batch_execute(&sql).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => { eprintln!("error running batch: {e}"); Err(e) },
-                },
-            _ => Ok(())
-        };
     }
 }

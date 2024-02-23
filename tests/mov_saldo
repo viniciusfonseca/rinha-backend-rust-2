@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+curl http://localhost:9999/clientes/1/transacoes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "valor": 100,
+    "tipo": "d",
+    "descricao": "abc"
+  }'
