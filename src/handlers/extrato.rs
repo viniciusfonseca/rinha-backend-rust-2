@@ -3,9 +3,8 @@ use std::{sync::Arc, time::SystemTime};
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tokio_postgres::Row;
 
-use crate::AppState;
+use crate::{atomic_fd::AtomicLog, AppState};
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -33,19 +32,23 @@ pub fn parse_sys_time_as_string(system_time: SystemTime) -> String {
 }
 
 impl ExtratoDTO {
-    pub fn from(saldo: i32, limite: i32, extrato: Vec<Row>) -> ExtratoDTO {
+    pub fn from(saldo: i32, limite: i32, extrato: Vec<AtomicLog>) -> ExtratoDTO {
+        let mut ultimas_transacoes = Vec::new();
+        for (_txid, valor, realizada_em, tipo, descricao) in extrato {
+            ultimas_transacoes.push(ExtratoTransacaoDTO {
+                valor,
+                tipo,
+                descricao,
+                realizada_em
+            });
+        }
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
                 total: saldo,
                 data_extrato: parse_sys_time_as_string(SystemTime::now()),
                 limite
             },
-            ultimas_transacoes: extrato.iter().map(|t| ExtratoTransacaoDTO {
-                valor: t.get(0),
-                tipo: t.get(1),
-                descricao: t.get(2),
-                realizada_em: parse_sys_time_as_string(t.get(3))
-            }).collect()
+            ultimas_transacoes
         }
     }
 }
@@ -59,13 +62,11 @@ pub async fn handler(
         return (StatusCode::NOT_FOUND, String::new());
     }
 
-    let saldo = app_state.atomic_fd.get_mut(&id_cliente).unwrap().get_value().await;
+    let mut atomic_fd = app_state.atomic_fd.get_async(&id_cliente).await.unwrap();
+    let atomic_fd = atomic_fd.get_mut();
+    let saldo = atomic_fd.get_value().await;
     let limite = *app_state.limites.get(id_cliente).unwrap();
-
-    
-    
-    let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
-        .expect("error querying transactions");
+    let extrato = atomic_fd.get_logs(10).await;
 
     (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
 }

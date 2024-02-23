@@ -47,11 +47,11 @@ pub async fn create_atomic(client: &HyperClient, id_cliente: usize, limite: i32,
 
 pub async fn movimenta_saldo(
     client: &HyperClient,
-    id_cliente: i32,
+    id_cliente: usize,
     valor: i32,
     tipo: String,
     descricao: String
-) -> Result<(i32, i32), anyhow::Error> {
+) -> Result<i32, anyhow::Error> {
 
     let body = format!("{tipo},{descricao}");
     let body = Full::new(Bytes::from(body));
@@ -62,15 +62,10 @@ pub async fn movimenta_saldo(
         .expect("error building request (movimenta_saldo)");
 
     let response = make_socket_request(client, request).await;
-    let split = response.split(",").collect::<Vec<&str>>();
-    
-    if split.len() == 1 {
+    if response.is_empty() {
         Err(Error::msg(""))
     }
     else {
-        Ok((
-            split.get(0).unwrap().parse::<i32>().unwrap(),
-            split.get(1).unwrap().parse::<i32>().unwrap(),
-        ))
+        Ok(response.parse::<i32>().unwrap())
     }
 }

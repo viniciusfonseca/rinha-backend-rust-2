@@ -1,10 +1,8 @@
-use std::{env, sync::Arc};
-use deadpool_postgres::Pool;
-use sql_builder::{quote, SqlBuilder};
+use std::sync::Arc;
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::{socket_client::movimenta_saldo, AppQueue, AppState};
+use crate::{socket_client::movimenta_saldo, AppState};
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -21,7 +19,7 @@ struct TransacaoResultDTO {
 
 #[axum::debug_handler]
 pub async fn handler(
-    Path(id_cliente): Path<i32>,
+    Path(id_cliente): Path<usize>,
     State(app_state): State<Arc<AppState>>,
     payload: Bytes,
 ) -> impl IntoResponse {
@@ -45,9 +43,10 @@ pub async fn handler(
         "c" => payload.valor,
         _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
+    let limite = app_state.limites.get(id_cliente).unwrap();
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
-        Ok((saldo_atualizado, limite)) =>
+        Ok(saldo_atualizado) =>
             (StatusCode::OK, format!("{saldo_atualizado},{limite}")),
         Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
