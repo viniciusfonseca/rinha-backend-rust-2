@@ -16,14 +16,13 @@ struct AppState {
     limites: Vec<i32>
 }
 
-type QueueEvent = (i32, i32, i32, String, String, String);
 type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
 
 #[tokio::main]
 async fn main() {
 
     let socket_client = HyperClient::unix();
-    let mut atomic_fd = scc::HashMap::new();
+    let atomic_fd = scc::HashMap::new();
     let limites = vec![100000, 80000, 1000000, 10000000, 500000];
     let log_size = 128;
 
@@ -31,7 +30,7 @@ async fn main() {
         if env::var("PRIMARY").is_ok() {
             _ = create_atomic(&socket_client, i, *limite, log_size);
         }
-        atomic_fd.insert_async(i, AtomicFd::new(i, log_size).await).await;
+        _ = atomic_fd.insert_async(i, AtomicFd::new(i, log_size).await).await;
     }
 
     let app_state = Arc::new(AppState {

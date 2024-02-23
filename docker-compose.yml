@@ -24,7 +24,7 @@ services:
     environment:
       PRIMARY: 1
 
-  alexdb:
+  db:
     build: ../alexdb
     environment:
       SOCKET_PATH: /tmp/sockets/alexdb.sock

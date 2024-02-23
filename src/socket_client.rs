@@ -42,7 +42,7 @@ pub async fn create_atomic(client: &HyperClient, id_cliente: usize, limite: i32,
         .body(body)
         .expect("error building request (create_atomic)");
 
-    make_socket_request(client, request);
+    make_socket_request(client, request).await;
 }
 
 pub async fn movimenta_saldo(
