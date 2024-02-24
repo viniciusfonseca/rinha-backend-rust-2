@@ -2,6 +2,7 @@ use anyhow::Error;
 use axum::{body::Bytes, response::IntoResponse};
 use http_body_util::{BodyExt, Full};
 use hyper::Request;
+use hyperlocal::Uri;
 use serde_json::json;
 
 use crate::HyperClient;
@@ -38,7 +39,8 @@ pub async fn create_atomic(client: &HyperClient, id_cliente: usize, limite: i32,
 
     let request = Request::builder()
         .method("POST")
-        .uri(format!("{SOCKET_PATH_BASE}/atomics"))
+        .uri(Uri::new(SOCKET_PATH_BASE, "/atomics"))
+        .header("Content-Type", "application/json")
         .body(body)
         .expect("error building request (create_atomic)");
 
@@ -57,7 +59,7 @@ pub async fn movimenta_saldo(
     let body = Full::new(Bytes::from(body));
     let request = Request::builder()
         .method("POST")
-        .uri(format!("{SOCKET_PATH_BASE}/atomics/{id_cliente}/{valor}"))
+        .uri(Uri::new(SOCKET_PATH_BASE, format!("/atomics/{id_cliente}/{valor}").as_str()))
         .body(body)
         .expect("error building request (movimenta_saldo)");
 

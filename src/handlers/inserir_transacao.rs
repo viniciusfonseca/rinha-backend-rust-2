@@ -46,8 +46,8 @@ pub async fn handler(
     let limite = app_state.limites.get(id_cliente).unwrap();
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
-        Ok(saldo_atualizado) =>
-            (StatusCode::OK, format!("{saldo_atualizado},{limite}")),
+        Ok(saldo) =>
+            (StatusCode::OK, format!("{{\"saldo\":{saldo},\"limite\":{limite}}}")),
         Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
 }

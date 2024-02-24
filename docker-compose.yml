@@ -26,9 +26,14 @@ services:
 
   db:
     build: ../alexdb
+    user: www-data:www-data
     environment:
       SOCKET_PATH: /tmp/sockets/alexdb.sock
       DATA_PATH: /tmp
+      RESET_FILES: 1
+    volumes:
+      - sockets:/tmp/sockets
+      - alexdb-storage:/tmp
   
   nginx:
     image: nginx:latest

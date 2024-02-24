@@ -24,13 +24,14 @@ async fn main() {
     let socket_client = HyperClient::unix();
     let atomic_fd = scc::HashMap::new();
     let limites = vec![100000, 80000, 1000000, 10000000, 500000];
-    let log_size = 128;
+    let log_size = 64;
+    let is_primary = env::var("PRIMARY").is_ok();
 
     for (i, limite) in limites.iter().enumerate() {
-        if env::var("PRIMARY").is_ok() {
-            _ = create_atomic(&socket_client, i, *limite, log_size);
+        if is_primary {
+            create_atomic(&socket_client, i + 1, *limite, log_size).await;
         }
-        _ = atomic_fd.insert_async(i, AtomicFd::new(i, log_size).await).await;
+        _ = atomic_fd.insert_async(i + 1, AtomicFd::new(i + 1, log_size).await).await;
     }
 
     let app_state = Arc::new(AppState {
