@@ -40,7 +40,9 @@ impl AtomicFd {
             _ = self.logs.seek(std::io::SeekFrom::Start(0)).await;
         }
         let mut buf = vec![0 as u8; buffer_size];
-        self.logs.read(&mut buf).await.unwrap();
+        if self.logs.read(&mut buf).await.unwrap() == 0 {
+            return Vec::new()
+        }
         let lines = String::from_utf8(buf).unwrap();
         let lines = lines.trim_matches(char::from(0x0A)).split("\n");
         let mut r = Vec::new();

@@ -65,7 +65,7 @@ pub async fn handler(
     let mut atomic_fd = app_state.atomic_fd.get_async(&id_cliente).await.unwrap();
     let atomic_fd = atomic_fd.get_mut();
     let saldo = atomic_fd.get_value().await;
-    let limite = *app_state.limites.get(id_cliente).unwrap();
+    let limite = *app_state.limites.get(id_cliente - 1).unwrap();
     let extrato = atomic_fd.get_logs(10).await;
 
     (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
