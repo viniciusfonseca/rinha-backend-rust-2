@@ -47,6 +47,19 @@ pub async fn create_atomic(client: &HyperClient, id_cliente: usize, limite: i32,
     make_socket_request(client, request).await;
 }
 
+pub async fn obter_saldo(client: &HyperClient, id_cliente: usize) -> i32 {
+    
+    let request = Request::builder()
+        .method("GET")
+        .uri(Uri::new(SOCKET_PATH_BASE, format!("/atomics/{id_cliente}").as_str()))
+        .body(Full::new(Bytes::new()))
+        .expect("error building request (obter_saldo)");
+
+    let response = make_socket_request(client, request).await;
+
+    response.parse::<i32>().unwrap()
+}
+
 pub async fn movimenta_saldo(
     client: &HyperClient,
     id_cliente: usize,

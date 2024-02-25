@@ -31,6 +31,11 @@ services:
       SOCKET_PATH: /tmp/sockets/alexdb.sock
       DATA_PATH: /tmp
       RESET_FILES: 1
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "50MB"
     volumes:
       - sockets:/tmp/sockets
       - alexdb-storage:/tmp

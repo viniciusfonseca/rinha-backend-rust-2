@@ -43,7 +43,7 @@ pub async fn handler(
         "c" => payload.valor,
         _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
-    let limite = app_state.limites.get(id_cliente).unwrap();
+    let limite = app_state.limites.get(id_cliente - 1).unwrap();
 
     match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
         Ok(saldo) =>

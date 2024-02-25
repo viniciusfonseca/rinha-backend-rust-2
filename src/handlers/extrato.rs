@@ -4,7 +4,7 @@ use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{atomic_fd::AtomicLog, AppState};
+use crate::{atomic_fd::AtomicLog, socket_client::obter_saldo, AppState};
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -34,7 +34,7 @@ pub fn parse_sys_time_as_string(system_time: SystemTime) -> String {
 impl ExtratoDTO {
     pub fn from(saldo: i32, limite: i32, extrato: Vec<AtomicLog>) -> ExtratoDTO {
         let mut ultimas_transacoes = Vec::new();
-        for (_txid, valor, realizada_em, tipo, descricao) in extrato {
+        for (_txid, valor, _, realizada_em, tipo, descricao) in extrato {
             ultimas_transacoes.push(ExtratoTransacaoDTO {
                 valor,
                 tipo,
@@ -64,9 +64,14 @@ pub async fn handler(
 
     let mut atomic_fd = app_state.atomic_fd.get_async(&id_cliente).await.unwrap();
     let atomic_fd = atomic_fd.get_mut();
-    let saldo = atomic_fd.get_value().await;
     let limite = *app_state.limites.get(id_cliente - 1).unwrap();
-    let extrato = atomic_fd.get_logs(10).await;
-
+    let mut extrato = atomic_fd.get_logs(10).await;
+    extrato.reverse();
+    let saldo = if extrato.is_empty() {
+        obter_saldo(&app_state.socket_client, id_cliente).await
+    }
+    else {
+        extrato.get(0).unwrap().2
+    };
     (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
 }
