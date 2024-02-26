@@ -36,7 +36,7 @@ impl ExtratoDTO {
         let mut ultimas_transacoes = Vec::new();
         for (_txid, valor, _, realizada_em, tipo, descricao) in extrato {
             ultimas_transacoes.push(ExtratoTransacaoDTO {
-                valor,
+                valor: valor.abs(),
                 tipo,
                 descricao,
                 realizada_em
@@ -65,7 +65,10 @@ pub async fn handler(
     let mut atomic_fd = app_state.atomic_fd.get_async(&id_cliente).await.unwrap();
     let atomic_fd = atomic_fd.get_mut();
     let limite = *app_state.limites.get(id_cliente - 1).unwrap();
-    let mut extrato = atomic_fd.get_logs(10).await;
+    let mut extrato = {
+        let logs_file = atomic_fd.get_logs_file().await;
+        atomic_fd.get_logs(logs_file, 10).await
+    };
     extrato.reverse();
     let saldo = if extrato.is_empty() {
         obter_saldo(&app_state.socket_client, id_cliente).await
