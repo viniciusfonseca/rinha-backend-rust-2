@@ -11,6 +11,12 @@ services:
     volumes:
       - sockets:/tmp/sockets
       - alexdb-storage:/tmp
+    environment:
+      UDP_PORT: 3001
+      ALEXDB_UDP_PORT: 3000
+    ports:
+      - 3001:3001/udp
+      - 3002:3002/udp
     network_mode: host
     deploy:
       resources:
@@ -23,14 +29,17 @@ services:
     hostname: api02
     environment:
       PRIMARY: 1
+      UDP_PORT: 3002
+      ALEXDB_UDP_PORT: 3000
 
   db:
     build: ../alexdb
     user: www-data:www-data
     environment:
-      SOCKET_PATH: /tmp/sockets/alexdb.sock
       DATA_PATH: /tmp
-      RESET_FILES: 1
+      UDP_PORT: 3000
+    ports:
+      - 3000:3000/udp
     deploy:
       resources:
         limits:
@@ -48,8 +57,6 @@ services:
     depends_on:
       - api01
       - api02
-    ports:
-      - "9999:9999"
     network_mode: host
     deploy:
       resources:

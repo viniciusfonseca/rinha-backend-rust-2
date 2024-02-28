@@ -2,7 +2,7 @@ use std::sync::Arc;
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
-use crate::{socket_client::movimenta_saldo, AppState};
+use crate::AppState;
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -45,7 +45,7 @@ pub async fn handler(
     };
     let limite = app_state.limites.get(id_cliente - 1).unwrap();
 
-    match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
+    match app_state.alexdb_client.mutate_atomic(id_cliente, valor, format!("{},{}", payload.tipo, payload.descricao)).await {
         Ok(saldo) =>
             (StatusCode::OK, format!("{{\"saldo\":{saldo},\"limite\":{limite}}}")),
         Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())

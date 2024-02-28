@@ -2,40 +2,38 @@ use std::{env, sync::Arc};
 
 use atomic_fd::AtomicFd;
 use axum::{routing::{get, post}, Router};
-use http_body_util::Full;
-use hyperlocal::{UnixClientExt, UnixConnector};
-use socket_client::create_atomic;
+use alexdb_client::AlexDBClient;
 
 mod handlers;
-mod socket_client;
+mod alexdb_client;
 mod atomic_fd;
 
 struct AppState {
-    socket_client: HyperClient,
+    alexdb_client: Arc<AlexDBClient>,
     atomic_fd: scc::HashMap<usize, AtomicFd>,
     limites: Vec<i32>
 }
 
-type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
-
 #[tokio::main]
 async fn main() {
 
-    let socket_client = HyperClient::unix();
     let atomic_fd = scc::HashMap::new();
     let limites = vec![100000, 80000, 1000000, 10000000, 500000];
     let log_size = 72;
     let is_primary = env::var("PRIMARY").is_ok();
+    let alexdb_udp_port = env::var("ALEXDB_UDP_PORT").unwrap();
+    let client_udp_port = env::var("UDP_PORT").unwrap();
+    let alexdb_client = Arc::new(AlexDBClient::build(alexdb_udp_port, client_udp_port).await);
 
     for (i, limite) in limites.iter().enumerate() {
         if is_primary {
-            create_atomic(&socket_client, i + 1, *limite, log_size).await;
+            alexdb_client.create_atomic(i + 1, -*limite, log_size).await;
         }
         atomic_fd.insert_async(i + 1, AtomicFd::new(i + 1, log_size).await).await.unwrap();
     }
 
     let app_state = Arc::new(AppState {
-        socket_client,
+        alexdb_client,
         atomic_fd,
         limites
     });

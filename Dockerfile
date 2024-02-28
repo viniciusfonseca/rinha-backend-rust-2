@@ -21,6 +21,8 @@ FROM base
 COPY --from=build /app /app
 
 EXPOSE 80
+EXPOSE 3001/UDP
+EXPOSE 3002/UDP
 
 RUN chown -R www-data:www-data /tmp/sockets
 

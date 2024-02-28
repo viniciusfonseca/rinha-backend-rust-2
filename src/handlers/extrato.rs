@@ -4,7 +4,7 @@ use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{atomic_fd::AtomicLog, socket_client::obter_saldo, AppState};
+use crate::{atomic_fd::AtomicLog, AppState};
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -71,7 +71,7 @@ pub async fn handler(
     };
     extrato.reverse();
     let saldo = if extrato.is_empty() {
-        obter_saldo(&app_state.socket_client, id_cliente).await
+        app_state.alexdb_client.get_atomic(id_cliente).await
     }
     else {
         extrato.get(0).unwrap().2
