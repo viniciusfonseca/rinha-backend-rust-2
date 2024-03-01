@@ -1,15 +1,16 @@
-CREATE TABLE transacoes (
-	id SERIAL,
+CREATE UNLOGGED TABLE transacoes (
+	id INTEGER NOT NULL,
 	id_cliente INTEGER NOT NULL,
 	valor INTEGER NOT NULL,
 	tipo CHAR(1) NOT NULL,
 	descricao VARCHAR(10) NOT NULL,
-	realizada_em TIMESTAMP NOT NULL DEFAULT NOW()
+	realizada_em TIMESTAMP NOT NULL DEFAULT NOW(),
+	p INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_extrato ON transacoes (id DESC);
 
-CREATE TABLE saldos_limites (
+CREATE UNLOGGED TABLE saldos_limites (
 	id_cliente SERIAL PRIMARY KEY,
 	limite INTEGER NOT NULL,
 	saldo INTEGER NOT NULL
@@ -28,12 +29,14 @@ CREATE PROCEDURE INSERIR_TRANSACAO(
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  WITH UPDATE_SALDO AS (
+  WITH
+	UPDATE_SALDO AS (
 		UPDATE saldos_limites
 		SET saldo = saldo + p_valor
 		WHERE id_cliente = p_id_cliente AND saldo + p_valor >= - limite
 		RETURNING saldo, limite
-	), INSERTED AS (
+	),
+	INSERTED AS (
 		INSERT INTO transacoes (id_cliente, valor, tipo, descricao)
 		SELECT p_id_cliente, ABS(p_valor), p_tipo, p_descricao
 		FROM UPDATE_SALDO
@@ -43,6 +46,15 @@ BEGIN
 	FROM UPDATE_SALDO;
 END;
 $$;
+
+CREATE PROCEDURE MOVIMENTAR_SALDOS()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	SELECT * FROM transacoes WHERE p = 0 FOR UPDATE;
+	
+END;
+$$ LANGUAGE plpgsql;
 
 DO $$
 BEGIN

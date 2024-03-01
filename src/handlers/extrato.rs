@@ -1,9 +1,10 @@
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tokio_postgres::Row;
+
+use crate::{atomic_fd::AtomicLog, socket_client::obter_saldo, AppState};
 
 #[derive(Serialize)]
 struct ExtratoDTO {
@@ -26,53 +27,54 @@ struct ExtratoTransacaoDTO {
     pub realizada_em: String
 }
 
-fn parse_sys_time_as_string(system_time: SystemTime) -> String {
+pub fn parse_sys_time_as_string(system_time: SystemTime) -> String {
     DateTime::<Utc>::from(system_time).format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
 }
 
 impl ExtratoDTO {
-    pub fn from(saldo: &Row, extrato: Vec<Row>) -> ExtratoDTO {
+    pub fn from(saldo: i32, limite: i32, extrato: Vec<AtomicLog>) -> ExtratoDTO {
+        let mut ultimas_transacoes = Vec::new();
+        for (_txid, valor, _, realizada_em, tipo, descricao) in extrato {
+            ultimas_transacoes.push(ExtratoTransacaoDTO {
+                valor: valor.abs(),
+                tipo,
+                descricao,
+                realizada_em
+            });
+        }
         ExtratoDTO {
             saldo: ExtratoSaldoDTO {
-                total: saldo.get(0),
-                data_extrato: parse_sys_time_as_string(saldo.get(1)),
-                limite: saldo.get(2)
+                total: saldo,
+                data_extrato: parse_sys_time_as_string(SystemTime::now()),
+                limite
             },
-            ultimas_transacoes: extrato.iter().map(|t| ExtratoTransacaoDTO {
-                valor: t.get(0),
-                tipo: t.get(1),
-                descricao: t.get(2),
-                realizada_em: parse_sys_time_as_string(t.get(3))
-            }).collect()
+            ultimas_transacoes
         }
     }
 }
 
 pub async fn handler(
-    Path(id_cliente): Path<i32>,
-    State(pg_pool): State<deadpool_postgres::Pool>,
+    Path(id_cliente): Path<usize>,
+    State(app_state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
 
     if id_cliente > 5 {
         return (StatusCode::NOT_FOUND, String::new());
     }
 
-    let conn = pg_pool.get().await
-        .expect("error getting db conn");
-
-    let stmt_saldo = conn.prepare_cached("SELECT saldo, NOW(), limite FROM saldos_limites WHERE id_cliente = $1;").await.expect("error preparing stmt (balance)");
-
-    let saldo_rowset = conn.query(&stmt_saldo, &[&id_cliente]).await
-        .expect("error querying balance");
-
-    let saldo = saldo_rowset.get(0)
-        .expect("balance not found");
-
-    let stmt_extrato = conn.prepare_cached("SELECT valor, tipo, descricao, realizada_em FROM transacoes WHERE id_cliente = $1 ORDER BY id DESC LIMIT 10;").await.expect("error preparing stmt (transactions)");
-
-    let extrato = conn.query(&stmt_extrato, &[&id_cliente]).await
-        .expect("error querying transactions");
-
-
-    (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, extrato)).unwrap())
+    let mut atomic_fd = app_state.atomic_fd.get_async(&id_cliente).await.unwrap();
+    let atomic_fd = atomic_fd.get_mut();
+    let limite = *app_state.limites.get(id_cliente - 1).unwrap();
+    let mut extrato = {
+        let logs_file = atomic_fd.get_logs_file().await;
+        atomic_fd.get_logs(logs_file, 10).await
+    };
+    extrato.reverse();
+    let saldo = if extrato.is_empty() {
+        obter_saldo(&app_state.socket_client, id_cliente).await
+    }
+    else {
+        extrato.get(0).unwrap().2
+    };
+    (StatusCode::OK, serde_json::to_string(&ExtratoDTO::from(saldo, limite, extrato)).unwrap())
 }

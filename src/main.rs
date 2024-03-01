@@ -1,30 +1,49 @@
-use std::env;
+use std::{env, sync::Arc};
 
+use atomic_fd::AtomicFd;
 use axum::{routing::{get, post}, Router};
-use deadpool::Runtime;
-use tokio_postgres::NoTls;
+use http_body_util::Full;
+use hyperlocal::{UnixClientExt, UnixConnector};
+use socket_client::create_atomic;
 
 mod handlers;
+mod socket_client;
+mod atomic_fd;
+
+struct AppState {
+    socket_client: HyperClient,
+    atomic_fd: scc::HashMap<usize, AtomicFd>,
+    limites: Vec<i32>
+}
+
+type HyperClient = hyper_util::client::legacy::Client<UnixConnector, Full<hyper::body::Bytes>>;
 
 #[tokio::main]
 async fn main() {
 
-    let mut cfg = deadpool_postgres::Config::new();
-    cfg.host = Some("/var/run/postgresql".to_string());
-    cfg.port = Some(5432);
-    cfg.dbname = Some("rinhadb".to_string());
-    cfg.user = Some("root".to_string());
-    cfg.password = Some("1234".to_string());
-    let pool_size = 125;
+    let socket_client = HyperClient::unix();
+    let atomic_fd = scc::HashMap::new();
+    let limites = vec![100000, 80000, 1000000, 10000000, 500000];
+    let log_size = 72;
+    let is_primary = env::var("PRIMARY").is_ok();
 
-    cfg.pool = deadpool_postgres::PoolConfig::new(pool_size).into();
-    let pg_pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("error creating pg pool");
+    for (i, limite) in limites.iter().enumerate() {
+        if is_primary {
+            create_atomic(&socket_client, i + 1, *limite, log_size).await;
+        }
+        atomic_fd.insert_async(i + 1, AtomicFd::new(i + 1, log_size).await).await.unwrap();
+    }
+
+    let app_state = Arc::new(AppState {
+        socket_client,
+        atomic_fd,
+        limites
+    });
 
     let app = Router::new()
         .route("/clientes/:id/transacoes", post(handlers::inserir_transacao::handler))
         .route("/clientes/:id/extrato", get(handlers::extrato::handler))
-        .with_state::<()>(pg_pool);
+        .with_state::<()>(app_state);
 
     let hostname = env::var("HOSTNAME").unwrap();
 

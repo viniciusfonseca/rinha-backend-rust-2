@@ -1,5 +1,8 @@
+use std::sync::Arc;
 use axum::{body::Bytes, extract::{Path, State}, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
+
+use crate::{socket_client::movimenta_saldo, AppState};
 
 #[derive(Deserialize)]
 struct TransacaoDTO {
@@ -14,9 +17,10 @@ struct TransacaoResultDTO {
     pub limite: i32
 }
 
+#[axum::debug_handler]
 pub async fn handler(
-    Path(id_cliente): Path<i32>,
-    State(pg_pool): State<deadpool_postgres::Pool>,
+    Path(id_cliente): Path<usize>,
+    State(app_state): State<Arc<AppState>>,
     payload: Bytes,
 ) -> impl IntoResponse {
 
@@ -39,24 +43,11 @@ pub async fn handler(
         "c" => payload.valor,
         _ => return (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     };
+    let limite = app_state.limites.get(id_cliente - 1).unwrap();
 
-    let conn = pg_pool.get().await
-        .expect("error getting db conn");
-    
-    let saldo_atualizado = conn.query("CALL INSERIR_TRANSACAO($1, $2, $3, $4);", &[
-        &id_cliente,
-        &valor,
-        &payload.tipo,
-        &payload.descricao
-    ]).await.expect("error running function");
-
-    let saldo_atualizado = saldo_atualizado.get(0).unwrap();
-
-    match saldo_atualizado.get::<_, Option<i32>>(0) {
-        Some(saldo) => (StatusCode::OK, serde_json::to_string(&TransacaoResultDTO {
-            saldo,
-            limite: saldo_atualizado.get(1)
-        }).unwrap()),
-        None => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
+    match movimenta_saldo(&app_state.socket_client, id_cliente, valor, payload.tipo, payload.descricao).await {
+        Ok(saldo) =>
+            (StatusCode::OK, format!("{{\"saldo\":{saldo},\"limite\":{limite}}}")),
+        Err(_) => (StatusCode::UNPROCESSABLE_ENTITY, String::new())
     }
 }
